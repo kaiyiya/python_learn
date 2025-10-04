@@ -1,10 +1,6 @@
 import random
 import numpy as np
-try:
-    from cffi.backend_ctypes import xrange  # 某些环境下可用
-except Exception:
-    # 兼容没有 cffi 的环境：使用 Python3 的 range 代替
-    xrange = range
+from cffi.backend_ctypes import xrange
 
 
 class Network(object):
