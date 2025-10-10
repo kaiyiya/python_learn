@@ -5,29 +5,33 @@ import torch.nn as nn
 class _netG(nn.Module):
     def __init__(self, opt):
         super(_netG, self).__init__()
+        # 配置GPU数量
         self.ngpu = opt.ngpu
+        # 创建一个顺序容器,用于按照顺序堆叠神经网络层,构建生成器的主要网络结构
         self.main = nn.Sequential(
             # input is (nc) x 128 x 128
-            nn.Conv2d(opt.nc,opt.nef,4,2,1, bias=False),
+            # 创建一个二维卷积层,输入通道数是opt.nc,输出通道数是opt.nef,卷积核大小是4,步长是2,填充是1,bias是False
+            nn.Conv2d(opt.nc, opt.nef, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
             # state size: (nef) x 64 x 64
-            nn.Conv2d(opt.nef,opt.nef,4,2,1, bias=False),
+            nn.Conv2d(opt.nef, opt.nef, 4, 2, 1, bias=False),
+            # 对输入进行归一化处理
             nn.BatchNorm2d(opt.nef),
             nn.LeakyReLU(0.2, inplace=True),
             # state size: (nef) x 32 x 32
-            nn.Conv2d(opt.nef,opt.nef*2,4,2,1, bias=False),
-            nn.BatchNorm2d(opt.nef*2),
+            nn.Conv2d(opt.nef, opt.nef * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(opt.nef * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # state size: (nef*2) x 16 x 16
-            nn.Conv2d(opt.nef*2,opt.nef*4,4,2,1, bias=False),
-            nn.BatchNorm2d(opt.nef*4),
+            nn.Conv2d(opt.nef * 2, opt.nef * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(opt.nef * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # state size: (nef*4) x 8 x 8
-            nn.Conv2d(opt.nef*4,opt.nef*8,4,2,1, bias=False),
-            nn.BatchNorm2d(opt.nef*8),
+            nn.Conv2d(opt.nef * 4, opt.nef * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(opt.nef * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # state size: (nef*8) x 4 x 4
-            nn.Conv2d(opt.nef*8,opt.nBottleneck,4, bias=False),
+            nn.Conv2d(opt.nef * 8, opt.nBottleneck, 4, bias=False),
             # tate size: (nBottleneck) x 1 x 1
             nn.BatchNorm2d(opt.nBottleneck),
             nn.LeakyReLU(0.2, inplace=True),
@@ -93,4 +97,3 @@ class _netlocalD(nn.Module):
             output = self.main(input)
 
         return output.view(-1, 1)
-
