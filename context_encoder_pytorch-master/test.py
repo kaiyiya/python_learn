@@ -1,12 +1,8 @@
 from __future__ import print_function
+
 import argparse
-import os
-import random
-import torch
+
 import torch.nn as nn
-import torch.nn.parallel
-import torch.backends.cudnn as cudnn
-import torch.optim as optim
 import torch.utils.data
 import torchvision.datasets as dset
 import torchvision.transforms as transforms
@@ -105,48 +101,79 @@ if opt.cuda:
     input_real, input_cropped = input_real.cuda(), input_cropped.cuda()
     criterionMSE.cuda()
     real_center = real_center.cuda()
-
+# 这段代码的功能是将输入数据转换为PyTorch的Variable对象：
+# 通过Variable包装，使这些张量能够参与自动梯度计算，便于后续的神经网络训练和反向传播。
 input_real = Variable(input_real)
 input_cropped = Variable(input_cropped)
 real_center = Variable(real_center)
-
+# 将数据加载器转换为迭代器对象
 dataiter = iter(dataloader)
+# 从迭代器中获取下一个批次的数据，返回真实数据样本和对应的标签（标签用_忽略）
 real_cpu, _ = dataiter.next()
 
+# 将input_real张量调整为real_cpu的大小，并将real_cpu的数据复制到input_real中
+# 作用：保存完整的原始图像，用于后续对比
 input_real.data.resize_(real_cpu.size()).copy_(real_cpu)
+
+# 将input_cropped张量调整为real_cpu的大小，并将real_cpu的数据复制到input_cropped中
+# 作用：先复制完整图像，后续会在中心位置进行遮挡处理
 input_cropped.data.resize_(real_cpu.size()).copy_(real_cpu)
+
+# 从原始图像中提取中心区域（假设imageSize=128，则提取[32:96, 32:96]，即中心64×64的区域）
+# 切片范围：从1/4处开始，取1/2的宽度和高度
+# 作用：提取真实的中心区域，作为ground truth用于后续评估模型预测效果
 real_center_cpu = real_cpu[:, :, opt.imageSize / 4:opt.imageSize / 4 + opt.imageSize / 2,
                   opt.imageSize / 4:opt.imageSize / 4 + opt.imageSize / 2]
+
+# 将提取的中心区域复制到real_center张量中
 real_center.data.resize_(real_center_cpu.size()).copy_(real_center_cpu)
 
+# ===== 以下代码对图像中心区域进行遮挡，模拟图像损坏场景 =====
+# 对input_cropped的R通道(通道0)中心区域填充灰色值
+# 遮挡范围：保留overlapPred(默认4)像素的边缘，只遮挡中心的56×56区域
+# 填充值：2*117.0/255.0-1.0 ≈ -0.082（归一化到[-1,1]范围的ImageNet均值R通道）
 input_cropped.data[:, 0, opt.imageSize / 4 + opt.overlapPred:opt.imageSize / 4 + opt.imageSize / 2 - opt.overlapPred,
 opt.imageSize / 4 + opt.overlapPred:opt.imageSize / 4 + opt.imageSize / 2 - opt.overlapPred] = 2 * 117.0 / 255.0 - 1.0
+
+# 对input_cropped的G通道(通道1)中心区域填充灰色值
+# 填充值：2*104.0/255.0-1.0 ≈ -0.184（归一化到[-1,1]范围的ImageNet均值G通道）
 input_cropped.data[:, 1, opt.imageSize / 4 + opt.overlapPred:opt.imageSize / 4 + opt.imageSize / 2 - opt.overlapPred,
 opt.imageSize / 4 + opt.overlapPred:opt.imageSize / 4 + opt.imageSize / 2 - opt.overlapPred] = 2 * 104.0 / 255.0 - 1.0
+
+# 对input_cropped的B通道(通道2)中心区域填充灰色值
+# 填充值：2*123.0/255.0-1.0 ≈ -0.035（归一化到[-1,1]范围的ImageNet均值B通道）
+# 完成后，input_cropped中心区域被填充为灰色，用于输入模型进行图像修复
 input_cropped.data[:, 2, opt.imageSize / 4 + opt.overlapPred:opt.imageSize / 4 + opt.imageSize / 2 - opt.overlapPred,
 opt.imageSize / 4 + opt.overlapPred:opt.imageSize / 4 + opt.imageSize / 2 - opt.overlapPred] = 2 * 123.0 / 255.0 - 1.0
-
+# 使用生成器网络netG对裁剪后的输入图像进行前向传播,生成假图像fake
 fake = netG(input_cropped)
+# 使用均方误差(MSE)准则计算fake（生成的假数据）与real_center（真实数据中心区域）之间的差异，将结果赋值给errG作为生成器的损失。
 errG = criterionMSE(fake, real_center)
-
+# 创建输入图像的深拷贝副本
 recon_image = input_cropped.clone()
+# 将拷贝的图像数据进行切片操作,选择图像中心区域
 recon_image.data[:, :, opt.imageSize / 4:opt.imageSize / 4 + opt.imageSize / 2,
 opt.imageSize / 4:opt.imageSize / 4 + opt.imageSize / 2] = fake.data
-
+# 保存输入图像、裁剪后的图像和修复后的图像
 vutils.save_image(real_cpu, 'val_real_samples.png', normalize=True)
 vutils.save_image(input_cropped.data, 'val_cropped_samples.png', normalize=True)
 vutils.save_image(recon_image.data, 'val_recon_samples.png', normalize=True)
 p = 0
 l1 = 0
 l2 = 0
+# 将生成的假数据转换为NumPy数组
 fake = fake.data.numpy()
+# 将PyTorch张量real_center转换为NumPy数组格式
 real_center = real_center.data.numpy()
+
 from psnr import psnr
 import numpy as np
-
+# 计算真是中心点与虚假点坐标的差值
 t = real_center - fake
+# 用于衡量两个点集之间的平均距离误差。
 l2 = np.mean(np.square(t))
 l1 = np.mean(np.abs(t))
+# 将真实中心区域数据从[-1,1]范围映射回[0,255]范围
 real_center = (real_center + 1) * 127.5
 fake = (fake + 1) * 127.5
 
