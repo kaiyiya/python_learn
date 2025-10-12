@@ -5,6 +5,7 @@ import torch.optim as optim
 import torchvision.utils as vutils
 import os
 import random
+
 from model.net import ContextEncoderGenerator, ContextEncoderDiscriminator, weights_init
 
 
@@ -120,9 +121,9 @@ class ContextEncoderTrainer(object):
                 real_centers = real_centers.to(self.device)
                 batch_size = corrupted_images.size(0)
                 
-                # 创建标签
-                real_label = torch.full((batch_size,), 1.0, device=self.device)
-                fake_label = torch.full((batch_size,), 0.0, device=self.device)
+                # 创建标签 - 确保形状与判别器输出匹配
+                real_label = torch.full((batch_size, 1), 1.0, device=self.device)
+                fake_label = torch.full((batch_size, 1), 0.0, device=self.device)
                 
                 ############################
                 # (1) 更新判别器网络
@@ -131,6 +132,10 @@ class ContextEncoderTrainer(object):
                 
                 # 训练判别器识别真实图像
                 output_real = self.netD(real_centers)
+                # 调试信息：打印形状
+                if i == 0 and epoch == 0:
+                    print(f"Debug - output_real shape: {output_real.shape}")
+                    print(f"Debug - real_label shape: {real_label.shape}")
                 errD_real = self.criterion(output_real, real_label)
                 errD_real.backward()
                 D_x = output_real.mean().item()
