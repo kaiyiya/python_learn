@@ -35,6 +35,10 @@ class ContextEncoderDataset(Dataset):
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
+        # 1. Resize: 256×256 → 128×128
+        # 2. CenterCrop: 128×128 → 128×128（确保正方形）
+        # 3. ToTensor: 128×128×3 → 3×128×128，像素值0-255 → 0-1
+        # 4. Normalize: 像素值0-1 → -1到1
         
         return torchvision.datasets.ImageFolder(
             root=self.opt.dataroot,
