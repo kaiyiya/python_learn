@@ -25,14 +25,14 @@ def train_val_data_process():
                                                         len(train_dataset) - round(
                                                             0.8 * len(train_dataset))])
     train_dataloader = DataLoader(dataset=train_data,
-                                  batch_size=32,
+                                  batch_size=64,
                                   shuffle=True,
-                                  num_workers=2)
+                                  num_workers=8)
 
     val_dataloader = DataLoader(dataset=val_data,
-                                batch_size=32,
+                                batch_size=64,
                                 shuffle=True,
-                                num_workers=2)
+                                num_workers=8)
     return train_dataloader, val_dataloader
 
 
@@ -103,8 +103,7 @@ def train_model_process(model, train_dataloader, val_dataloader, num_epochs):
         print("训练耗时:{:.0f}m {:.0f}s".format(time_use // 60, time_use % 60))
         # 选择最优参数
         # 加载最高的准确率
-        model.load_state_dict(best_model_wts)
-        torch.save(model.load_state_dict(best_model_wts), 'lenet_fashionmnist.pth')
+        torch.save(best_model_wts, 'lenet_fashionmnist.pth')
     # 保存所有数据
     train_process = pt.DataFrame(data={"epoch": range(num_epochs),
                                        "train_loss_all": train_loss_all,

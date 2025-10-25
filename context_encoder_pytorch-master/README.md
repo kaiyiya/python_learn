@@ -20,7 +20,7 @@ This is the Pytorch implement of [CVPR 2016 paper on Context Encoders](http://cs
     cp netG_streetview.pth context_encoder_pytorch/model/
     cd context_encoder_pytorch/model/
     # Inpainting a batch iamges
-    python test.py --netG model/netG_streetview.pth --dataroot dataset/val --batchSize 100
+    python model_test.py --netG model/netG_streetview.pth --dataroot dataset/val --batchSize 100
     # Inpainting one image 
     python test_one.py --netG model/netG_streetview.pth --test_image result/test/cropped/065_im.png
     ```
