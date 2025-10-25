@@ -25,14 +25,14 @@ def train_val_data_process():
                                                         len(train_dataset) - round(
                                                             0.8 * len(train_dataset))])
     train_dataloader = DataLoader(dataset=train_data,
-                                  batch_size=128,
+                                  batch_size=32,
                                   shuffle=True,
-                                  num_workers=8)
+                                  num_workers=2)
 
-    val_dataloader = DataLoader(dataset=train_data,
-                                batch_size=128,
+    val_dataloader = DataLoader(dataset=val_data,
+                                batch_size=32,
                                 shuffle=True,
-                                num_workers=8)
+                                num_workers=2)
     return train_dataloader, val_dataloader
 
 
@@ -42,8 +42,6 @@ def train_model_process(model, train_dataloader, val_dataloader, num_epochs):
     criterion = torch.nn.CrossEntropyLoss()  # 交叉熵损失函数
     model.to(device)
     best_model_wts = deepcopy(model.state_dict())  # 复制当前模型参数
-    #     初始化参数
-    # 最高准确度
     best_acc = 0.0
     train_loss_all = []
     train_acc_all = []
@@ -72,7 +70,7 @@ def train_model_process(model, train_dataloader, val_dataloader, num_epochs):
             # 反向传播
             loss.backward()
             optimizer.step()
-            train_loss += loss.item * b_x.size(0)
+            train_loss += loss.item() * b_x.size(0)
             train_acc += torch.sum(pre_lab == b_y)
             train_num += b_x.size(0)
         #     验证
@@ -84,7 +82,7 @@ def train_model_process(model, train_dataloader, val_dataloader, num_epochs):
             output = model(b_x)
             pre_lab = torch.argmax(output, dim=1)
             loss = criterion(output, b_y)
-            val_loss += loss.item * b_x.size(0)
+            val_loss += loss.item() * b_x.size(0)
             val_acc += torch.sum(pre_lab == b_y)
             val_num += b_x.size(0)
 
@@ -107,16 +105,14 @@ def train_model_process(model, train_dataloader, val_dataloader, num_epochs):
         # 加载最高的准确率
         model.load_state_dict(best_model_wts)
         torch.save(model.load_state_dict(best_model_wts), 'lenet_fashionmnist.pth')
-        # 保存所有数据
-        train_process = pt.DataFrame(data={"epoch": range(num_epochs),
-                                           "train_loss_all": train_loss_all,
-                                           "train_acc_all": train_acc_all,
-                                           "val_loss_all": val_loss_all,
-                                           "val_acc_all": val_acc_all,
-                                           "best_acc": best_acc,
-                                           "time_use": time_use
-                                           })
-        return train_process
+    # 保存所有数据
+    train_process = pt.DataFrame(data={"epoch": range(num_epochs),
+                                       "train_loss_all": train_loss_all,
+                                       "train_acc_all": train_acc_all,
+                                       "val_loss_all": val_loss_all,
+                                       "val_acc_all": val_acc_all
+                                       })
+    return train_process
 
 
 #         画图
