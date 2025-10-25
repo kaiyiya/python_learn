@@ -15,7 +15,8 @@ class LeNet(nn.Module):
         self.s4 = nn.AvgPool2d(kernel_size=2, stride=2)
         #     平展层
         self.flatten = nn.Flatten()
-        self.f5 = nn.Linear(16 * 5 * 5, 120)
+        # 修改全连接层以适应224x224输入：224->112->108->54，所以是16*54*54=46656
+        self.f5 = nn.Linear(16 * 54 * 54, 120)
         self.f6 = nn.Linear(120, 84)
         self.f7 = nn.Linear(84, 10)
 
