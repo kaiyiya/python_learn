@@ -132,7 +132,7 @@ class ContextEncoderTrainer(object):
                 self.netD.zero_grad()
 
                 # 训练判别器识别真实图像
-                output_real = self.netD(real_centers)
+                output_real = self.netD(real_centers)#清除判别器网络的所有参数梯度
                 # 调试信息：打印形状
                 if i == 0 and epoch == 0:
                     print(f"Debug - output_real shape: {output_real.shape}")
