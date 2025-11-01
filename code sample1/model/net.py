@@ -34,9 +34,7 @@ class UNet(nn.Module):
         self.enc2 = self.conv_block(64, 128)
         self.enc3 = self.conv_block(128, 256)
         self.enc4 = self.conv_block(256, 512)
-
         self.bottleneck = self.conv_block(512, 1024)
-
         self.upconv4 = nn.ConvTranspose2d(1024, 512, kernel_size=2, stride=2)
         self.dec4 = self.conv_block(1024, 512)
         self.upconv3 = nn.ConvTranspose2d(512, 256, kernel_size=2, stride=2)
