@@ -16,7 +16,7 @@ if __name__ == '__main__':
     args = cfg_loader.get_config()
 
     # 创建数据集和数据加载器
-    dataset = MyDataset('data/train/img', 'data/train/gt')
+    dataset = MyDataset('data/val/img', 'data/val/gt')
     dataloader = DataLoader(dataset=dataset, batch_size=args.batch_size, shuffle=True)
 
     # 创建模型

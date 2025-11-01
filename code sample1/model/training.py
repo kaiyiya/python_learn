@@ -10,7 +10,7 @@ class Trainer(object):
         self.model = model
         self.device = device
         self.criterion = torch.nn.functional.binary_cross_entropy
-        self.optimizer = torch.optim.Adam(lr=0.003, params=model.parameters())
+        self.optimizer = torch.optim.Adam(lr=0.001, params=model.parameters())
         self.epochs = 200
         self.model.to(device)
 
