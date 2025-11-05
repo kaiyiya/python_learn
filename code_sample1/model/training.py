@@ -193,7 +193,7 @@ class Trainer(object):
             print(f'  训练时间: {epoch_time:.2f}s | 训练速度: {epoch_speed:.2f} samples/sec')
             print(f'{"=" * 80}')
 
-            # 可视化：保存一组对比图（输入/概率/二值/GT）
+            # 可视化：保存一组对比图（输入/概率/二值/GT + 额外差异图）
             try:
                 os.makedirs('PredvsGT', exist_ok=True)
                 with torch.no_grad():
@@ -208,16 +208,48 @@ class Trainer(object):
                         # 仅保存第一个batch的第一个样本
                         img_np = vis_img[0, 0].detach().cpu().numpy()
                         prob_np = vis_probs[0, 0].detach().cpu().numpy()
-                        pred_np = vis_pred[0, 0].detach().cpu().numpy()
+                        pred_np_t02 = vis_pred[0, 0].detach().cpu().numpy()
+                        pred_np_t05 = (vis_probs[0, 0] > 0.5).float().cpu().numpy()
                         mask_np = vis_mask[0, 0].detach().cpu().numpy()
 
-                        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+                        # 基础四图
+                        fig, axes = plt.subplots(1, 4, figsize=(18, 4))
                         axes[0].imshow(img_np, cmap='gray'); axes[0].set_title('Input'); axes[0].axis('off')
-                        im1 = axes[1].imshow(prob_np, cmap='viridis'); axes[1].set_title('Prob'); axes[1].axis('off'); plt.colorbar(im1, ax=axes[1])
-                        axes[2].imshow(pred_np, cmap='gray'); axes[2].set_title(f'Pred(th={thr})'); axes[2].axis('off')
+                        im1 = axes[1].imshow(prob_np, cmap='viridis', vmin=0.2, vmax=0.8)
+                        axes[1].set_title('Prob (0.2~0.8)'); axes[1].axis('off'); plt.colorbar(im1, ax=axes[1])
+                        axes[2].imshow(pred_np_t02, cmap='gray'); axes[2].set_title('Pred th=0.2'); axes[2].axis('off')
                         axes[3].imshow(mask_np, cmap='gray'); axes[3].set_title('GT'); axes[3].axis('off')
                         plt.tight_layout()
                         plt.savefig(os.path.join('PredvsGT', f'epoch_{epoch:03d}.png'), dpi=150, bbox_inches='tight')
+                        plt.close()
+
+                        # 差异可视化：叠加等高线与误差图
+                        fig2, axes2 = plt.subplots(1, 4, figsize=(22, 4))
+                        # 1) Overlay: 在输入上叠加 GT(绿) 与 Pred(红) 边界
+                        axes2[0].imshow(img_np, cmap='gray')
+                        c1 = axes2[0].contour(mask_np, levels=[0.5], colors='lime', linewidths=1)
+                        c2 = axes2[0].contour(pred_np_t02, levels=[0.5], colors='red', linewidths=1)
+                        axes2[0].set_title('Overlay: GT(green) & Pred(red)')
+                        axes2[0].axis('off')
+
+                        # 2) 二阈值对比
+                        axes2[1].imshow(pred_np_t02, cmap='gray'); axes2[1].set_title('Pred th=0.2'); axes2[1].axis('off')
+                        axes2[2].imshow(pred_np_t05, cmap='gray'); axes2[2].set_title('Pred th=0.5'); axes2[2].axis('off')
+
+                        # 3) 误差图：FP=红, FN=蓝, TP=淡绿
+                        fp = (pred_np_t02 == 1) & (mask_np == 0)
+                        fn = (pred_np_t02 == 0) & (mask_np == 1)
+                        tp = (pred_np_t02 == 1) & (mask_np == 1)
+                        h, w = mask_np.shape
+                        diff = np.zeros((h, w, 3), dtype=np.float32)
+                        diff[fp] = [1.0, 0.0, 0.0]   # 红
+                        diff[fn] = [0.0, 0.0, 1.0]   # 蓝
+                        diff[tp] = [0.0, 1.0, 0.0] * 0.3  # 淡绿
+                        axes2[3].imshow(diff)
+                        axes2[3].set_title('Diff: FP(red) FN(blue) TP(green)')
+                        axes2[3].axis('off')
+                        plt.tight_layout()
+                        plt.savefig(os.path.join('PredvsGT', f'epoch_{epoch:03d}_diff.png'), dpi=150, bbox_inches='tight')
                         plt.close()
                         break
             except Exception:
