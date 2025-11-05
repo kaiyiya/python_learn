@@ -99,7 +99,7 @@ class Trainer(object):
                 # 使用全局pos_weight
                 bce = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=self.pos_weight)
                 dice = self.dice_loss(output, mask)
-                loss = bce + 1.0 * dice
+                loss = bce + 1.5 * dice
                 loss.backward()
 
                 # 计算梯度范数（在step之前）
@@ -117,8 +117,8 @@ class Trainer(object):
                     output_sum = probs.sum().item()
                     mask_nonzero = (mask > 0.01).sum().item()  # 统计非零像素
                     
-                    # 使用较低阈值以缓解前景稀少（默认0.3）
-                    thr = 0.3
+                    # 使用更低阈值以缓解前景稀少（0.2）
+                    thr = 0.2
                     iou = self.calculate_iou(probs, mask, threshold=thr).item()
                     dice = self.calculate_dice(probs, mask, threshold=thr).item()
                     accuracy = self.calculate_accuracy(probs, mask, threshold=thr).item()
@@ -193,10 +193,10 @@ class Trainer(object):
                         # 与训练相同的全局pos_weight
                         bce_v = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=self.pos_weight)
                         dice_v = self.dice_loss(output, mask)
-                        vloss = bce_v + 1.0 * dice_v
+                        vloss = bce_v + 1.5 * dice_v
                         val_losses.append(vloss.item())
                         probs = torch.sigmoid(output)
-                        thr = 0.3
+                        thr = 0.2
                         val_ious.append(self.calculate_iou(probs, mask, threshold=thr).item())
                         val_dices.append(self.calculate_dice(probs, mask, threshold=thr).item())
                         val_accuracies.append(self.calculate_accuracy(probs, mask, threshold=thr).item())
