@@ -83,8 +83,8 @@ class MyDataset(Dataset):
         # 处理mask：根据原始像素值范围判断如何处理
         # 情况1: 如果是0/1标注（二值图像，像素值只有0和1）
         if len(mask_unique) <= 2 and mask_max <= 1:
-            # 已经是0/1标注，直接使用，确保是float类型
-            mask = mask.float()
+            # PIL的0/1到tensor后会变成0和(1/255)≈0.0039，需要手动二值化回0/1
+            mask = (mask > (0.5 / 255.0)).float()
         # 情况2: 如果是0-255范围的二值图像（0和255）
         elif len(mask_unique) <= 2 and mask_max > 1:
             # 归一化到0-1，然后二值化
