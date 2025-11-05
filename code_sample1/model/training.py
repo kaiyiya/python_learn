@@ -17,11 +17,11 @@ class Trainer(object):
         import torch.nn.functional as F
         self.F = F
         self.criterion = None  # 用F.binary_cross_entropy_with_logits按步构造
-        self.optimizer = torch.optim.Adam(lr=0.001, params=model.parameters())
+        self.optimizer = torch.optim.Adam(lr=0.0003, params=model.parameters())
         self.epochs = 200
         self.model.to(device)
-        # 全局pos_weight（基于数据集前景约3%估算，限制上限50）
-        self.pos_weight = torch.tensor(32.0, device=self.device)
+        # 全局pos_weight（减小到16，限制上限50）
+        self.pos_weight = torch.tensor(16.0, device=self.device)
         self.pos_weight = torch.clamp(self.pos_weight, max=50.0)
 
     def calculate_iou(self, pred, target, threshold=0.5):
@@ -92,23 +92,34 @@ class Trainer(object):
             self.model.train()
 
             scaler = torch.cuda.amp.GradScaler(enabled=(self.device.type == 'cuda'))
+            use_bf16 = (self.device.type == 'cuda') and hasattr(torch.cuda, 'is_bf16_supported') and torch.cuda.is_bf16_supported()
             for i, (img, mask) in enumerate(self.train_loader):
                 step_start_time = time.time()
                 img, mask = img.to(self.device), mask.float().to(self.device)
 
                 self.optimizer.zero_grad(set_to_none=True)
-                with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
+                autocast_kwargs = {}
+                if use_bf16:
+                    autocast_kwargs = dict(dtype=torch.bfloat16)
+                with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda'), **autocast_kwargs):
                     output = self.model(img)  # logits
                     # 使用全局pos_weight
                     bce = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=self.pos_weight)
                     dice = self.dice_loss(output, mask)
-                    loss = bce + 1.5 * dice
+                    loss = bce + 1.0 * dice
+                # 数值检查：若loss非有限，跳过该batch
+                if not torch.isfinite(loss):
+                    print('  ⚠️  非有限loss，跳过该batch')
+                    continue
                 scaler.scale(loss).backward()
 
                 # 计算梯度范数（在step之前）
                 grad_norm = self.get_gradient_norm(self.model)
                 gradient_norms.append(grad_norm)
 
+                # 梯度裁剪，避免爆炸
+                scaler.unscale_(self.optimizer)
+                torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
                 scaler.step(self.optimizer)
                 scaler.update()
 
@@ -223,12 +234,12 @@ class Trainer(object):
                 with torch.no_grad():
                     for img, mask in self.val_loader:
                         img, mask = img.to(self.device), mask.float().to(self.device)
-                        with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda')):
+                        with torch.cuda.amp.autocast(enabled=(self.device.type == 'cuda'), **autocast_kwargs):
                             output = self.model(img)  # logits
                             # 与训练相同的全局pos_weight
                             bce_v = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=self.pos_weight)
                             dice_v = self.dice_loss(output, mask)
-                            vloss = bce_v + 1.5 * dice_v
+                            vloss = bce_v + 1.0 * dice_v
                         val_losses.append(vloss.item())
                         probs = torch.sigmoid(output)
                         thr = 0.2
