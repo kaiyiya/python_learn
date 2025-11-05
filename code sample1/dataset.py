@@ -10,9 +10,25 @@ from torchvision.transforms import functional as TF
 from torchvision.transforms import InterpolationMode
 # shape = (512, 512)
 class MyDataset(Dataset):
-    def __init__(self, img_dir, mask_dir):
+    def __init__(self, img_dir, mask_dir, augment=True):
         self.img_dir = img_dir
         self.mask_dir = mask_dir
+        self.augment = augment
+        self.base_transform = transforms.Compose([
+            transforms.ToTensor()
+        ])
+        # 高级增强列表（随机选择1-3个组合）
+        self.aug_transforms = [
+            transforms.RandomHorizontalFlip(p=0.5),
+            transforms.RandomRotation(15),
+            transforms.RandomAffine(
+                degrees=0,
+                translate=(0.05, 0.05),
+                scale=(0.9, 1.1),
+                shear=5
+            ),
+            transforms.ElasticTransform(alpha=10.0, sigma=3.0)
+        ]
         
         # 检查目录是否存在
         if not os.path.exists(img_dir):
@@ -60,45 +76,30 @@ class MyDataset(Dataset):
         mask_max = mask_array.max()
         mask_unique = np.unique(mask_array)
         
-        # 同步数据增强：水平翻转 + 旋转，与原逻辑等价（随机角度±30°）
-        # 对掩码使用最近邻插值，避免插值产生非0/1灰度
-        rng = random.Random()
-        seed = torch.randint(0, 2**32, (1,)).item()
-        rng.seed(seed)
+        # 增强：从增强列表中随机取1-3个组合，并与ToTensor串联；用相同随机种子保证img/mask一致
+        if self.augment and len(self.aug_transforms) > 0:
+            seed = int(torch.randint(0, 1_000_000, (1,)).item())
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
 
-        do_flip = rng.random() < 0.5
-        angle = rng.uniform(-30, 30)
+            num_transforms = random.randint(1, min(3, len(self.aug_transforms)))
+            selected = random.sample(self.aug_transforms, num_transforms)
+            pipeline = transforms.Compose(selected + [transforms.ToTensor()])
 
-        if do_flip:
-            img_ = TF.hflip(img_)
-            mask_ = TF.hflip(mask_)
+            img = pipeline(img_)
 
-        img_ = TF.rotate(img_, angle, interpolation=InterpolationMode.BILINEAR, expand=False)
-        mask_ = TF.rotate(mask_, angle, interpolation=InterpolationMode.NEAREST, expand=False)
-
-        # 转张量：img -> [0,1]，mask需要归一化
-        img = TF.to_tensor(img_)
-        mask = TF.to_tensor(mask_)
-        
-        # 处理mask：根据原始像素值范围判断如何处理
-        # 情况1: 如果是0/1标注（二值图像，像素值只有0和1）
-        if len(mask_unique) <= 2 and mask_max <= 1:
-            # PIL的0/1到tensor后会变成0和(1/255)≈0.0039，需要手动二值化回0/1
-            mask = (mask > (0.5 / 255.0)).float()
-        # 情况2: 如果是0-255范围的二值图像（0和255）
-        elif len(mask_unique) <= 2 and mask_max > 1:
-            # 归一化到0-1，然后二值化
-            mask = mask / 255.0
-            mask = (mask > 0.5).float()
-        # 情况3: 如果是0-255范围的灰度图像（有多个不同的值）
-        elif mask.max() > 1.0:
-            # 归一化到0-1，然后二值化（阈值0.5）
-            mask = mask / 255.0
-            mask = (mask > 0.5).float()
-        # 情况4: 如果已经是0-1范围的灰度图像
+            # 复用相同随机种子，确保mask与img同步
+            random.seed(seed)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            mask = pipeline(mask_)
         else:
-            # 二值化（阈值0.5）
-            mask = (mask > 0.5).float()
+            img = self.base_transform(img_)
+            mask = self.base_transform(mask_)
+        
+        # 最终统一二值化（兼容0/1或0/255及插值后的灰度）：
+        mask = (mask > 0).float()
         
         return img, mask
 

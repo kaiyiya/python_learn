@@ -2,6 +2,8 @@ from __future__ import division
 import torch
 import time
 import numpy as np
+import os
+import matplotlib.pyplot as plt
 
 
 class Trainer(object):
@@ -177,6 +179,36 @@ class Trainer(object):
             print(f'  当前学习率: {self.optimizer.param_groups[0]["lr"]:.6f}')
             print(f'  训练时间: {epoch_time:.2f}s | 训练速度: {epoch_speed:.2f} samples/sec')
             print(f'{"=" * 80}')
+
+            # 可视化：保存一组对比图（输入/概率/二值/GT）
+            try:
+                os.makedirs('PredvsGT', exist_ok=True)
+                with torch.no_grad():
+                    for vis_img, vis_mask in self.train_loader:
+                        vis_img = vis_img.to(self.device)
+                        vis_mask = vis_mask.to(self.device)
+                        vis_logits = self.model(vis_img)
+                        vis_probs = torch.sigmoid(vis_logits)
+                        thr = 0.2
+                        vis_pred = (vis_probs > thr).float()
+
+                        # 仅保存第一个batch的第一个样本
+                        img_np = vis_img[0, 0].detach().cpu().numpy()
+                        prob_np = vis_probs[0, 0].detach().cpu().numpy()
+                        pred_np = vis_pred[0, 0].detach().cpu().numpy()
+                        mask_np = vis_mask[0, 0].detach().cpu().numpy()
+
+                        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+                        axes[0].imshow(img_np, cmap='gray'); axes[0].set_title('Input'); axes[0].axis('off')
+                        im1 = axes[1].imshow(prob_np, cmap='viridis'); axes[1].set_title('Prob'); axes[1].axis('off'); plt.colorbar(im1, ax=axes[1])
+                        axes[2].imshow(pred_np, cmap='gray'); axes[2].set_title(f'Pred(th={thr})'); axes[2].axis('off')
+                        axes[3].imshow(mask_np, cmap='gray'); axes[3].set_title('GT'); axes[3].axis('off')
+                        plt.tight_layout()
+                        plt.savefig(os.path.join('PredvsGT', f'epoch_{epoch:03d}.png'), dpi=150, bbox_inches='tight')
+                        plt.close()
+                        break
+            except Exception:
+                pass
 
             # 验证集评估
             if self.val_loader is not None:
