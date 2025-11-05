@@ -6,7 +6,6 @@ from model.net import UNet
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
 import argparse
 
 
@@ -279,3 +278,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

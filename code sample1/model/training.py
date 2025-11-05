@@ -5,9 +5,10 @@ import numpy as np
 
 
 class Trainer(object):
-    def __init__(self, train_loader, model, opt, device):
+    def __init__(self, train_loader, model, opt, device, val_loader=None):
         self.args = opt
         self.train_loader = train_loader
+        self.val_loader = val_loader
         self.model = model
         self.device = device
         self.criterion = torch.nn.functional.binary_cross_entropy
@@ -119,7 +120,7 @@ class Trainer(object):
                     print(f'  Output range: [{output.min():.3f}, {output.max():.3f}]')
                     print(f'  Mask range: [{mask.min():.3f}, {mask.max():.3f}]')
 
-            # Epoch总结
+            # 训练集Epoch总结
             epoch_time = time.time() - epoch_start_time
             avg_loss = np.mean(losses)
             avg_iou = np.mean(ious)
@@ -140,7 +141,36 @@ class Trainer(object):
             print(f'  平均梯度范数: {avg_grad_norm:.4f}')
             print(f'  当前学习率: {self.optimizer.param_groups[0]["lr"]:.6f}')
             print(f'  训练时间: {epoch_time:.2f}s | 训练速度: {epoch_speed:.2f} samples/sec')
-            print(f'{"=" * 80}\n')
+            print(f'{"=" * 80}')
+
+            # 验证集评估
+            if self.val_loader is not None:
+                self.model.eval()
+                val_losses = []
+                val_ious = []
+                val_dices = []
+                val_accuracies = []
+                val_maes = []
+                with torch.no_grad():
+                    for img, mask in self.val_loader:
+                        img, mask = img.to(self.device), mask.float().to(self.device)
+                        output = self.model(img)
+                        vloss = self.criterion(output, mask)
+                        val_losses.append(vloss.item())
+                        val_ious.append(self.calculate_iou(output, mask).item())
+                        val_dices.append(self.calculate_dice(output, mask).item())
+                        val_accuracies.append(self.calculate_accuracy(output, mask).item())
+                        val_maes.append(self.calculate_mae(output, mask).item())
+
+                print(f'验证集:')
+                print(f'  平均 Val Loss: {np.mean(val_losses):.6f}')
+                print(f'  平均 Val IoU: {np.mean(val_ious):.4f}')
+                print(f'  平均 Val Dice: {np.mean(val_dices):.4f}')
+                print(f'  平均 Val Acc: {np.mean(val_accuracies):.4f}')
+                print(f'  平均 Val MAE: {np.mean(val_maes):.6f}')
+                print(f'{"=" * 80}\n')
+            else:
+                print()
 
             # 保存模型
             if epoch % 10 == 0:
