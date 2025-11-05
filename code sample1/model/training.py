@@ -11,13 +11,16 @@ class Trainer(object):
         self.val_loader = val_loader
         self.model = model
         self.device = device
-        # 使用BCEWithLogits以适配logits输出；pos_weight在每步动态计算
+        # 使用BCEWithLogits以适配logits输出；改为全局pos_weight
         import torch.nn.functional as F
         self.F = F
         self.criterion = None  # 用F.binary_cross_entropy_with_logits按步构造
-        self.optimizer = torch.optim.Adam(lr=0.00001, params=model.parameters())
+        self.optimizer = torch.optim.Adam(lr=0.001, params=model.parameters())
         self.epochs = 200
         self.model.to(device)
+        # 全局pos_weight（基于数据集前景约3%估算，限制上限50）
+        self.pos_weight = torch.tensor(32.0, device=self.device)
+        self.pos_weight = torch.clamp(self.pos_weight, max=50.0)
 
     def calculate_iou(self, pred, target, threshold=0.5):
         """计算IoU (Intersection over Union)"""
@@ -93,15 +96,10 @@ class Trainer(object):
                 self.optimizer.zero_grad()
                 output = self.model(img)  # logits
                 
-                # 计算类别不平衡的权重：pos_weight = neg/pos（逐batch）
-                with torch.no_grad():
-                    pos = mask.sum()
-                    neg = mask.numel() - pos
-                    # 防止除零
-                    pos_weight = (neg / (pos + 1e-6)).clamp(min=1.0)
-                bce = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
+                # 使用全局pos_weight
+                bce = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=self.pos_weight)
                 dice = self.dice_loss(output, mask)
-                loss = bce + 0.5 * dice
+                loss = bce + 1.0 * dice
                 loss.backward()
 
                 # 计算梯度范数（在step之前）
@@ -192,13 +190,10 @@ class Trainer(object):
                     for img, mask in self.val_loader:
                         img, mask = img.to(self.device), mask.float().to(self.device)
                         output = self.model(img)  # logits
-                        # 与训练相同的pos_weight策略
-                        pos = mask.sum()
-                        neg = mask.numel() - pos
-                        pos_weight = (neg / (pos + 1e-6)).clamp(min=1.0)
-                        bce_v = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
+                        # 与训练相同的全局pos_weight
+                        bce_v = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=self.pos_weight)
                         dice_v = self.dice_loss(output, mask)
-                        vloss = bce_v + 0.5 * dice_v
+                        vloss = bce_v + 1.0 * dice_v
                         val_losses.append(vloss.item())
                         probs = torch.sigmoid(output)
                         thr = 0.3
