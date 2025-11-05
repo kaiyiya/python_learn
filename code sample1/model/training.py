@@ -84,7 +84,7 @@ class Trainer(object):
                 loss = self.criterion(output, mask)
                 loss.backward()
 
-                # 计算梯度范数
+                # 计算梯度范数（在step之前）
                 grad_norm = self.get_gradient_norm(self.model)
                 gradient_norms.append(grad_norm)
 
@@ -92,6 +92,11 @@ class Trainer(object):
 
                 # 计算各种指标
                 with torch.no_grad():
+                    # 检查数据是否正常
+                    mask_sum = mask.sum().item()
+                    output_sum = output.sum().item()
+                    mask_nonzero = (mask > 0.01).sum().item()  # 统计非零像素
+                    
                     iou = self.calculate_iou(output, mask).item()
                     dice = self.calculate_dice(output, mask).item()
                     accuracy = self.calculate_accuracy(output, mask).item()
@@ -114,11 +119,19 @@ class Trainer(object):
                     print(f'\n[Epoch {epoch}/{self.epochs}] [Step {i}/{len(self.train_loader)}]')
                     print(f'  Loss: {loss.item():.6f}')
                     print(f'  IoU: {iou:.4f} | Dice: {dice:.4f} | Acc: {accuracy:.4f} | MAE: {mae:.6f}')
-                    print(f'  LR: {current_lr:.6f} | Grad Norm: {grad_norm:.4f}')
+                    print(f'  LR: {current_lr:.6f} | Grad Norm: {grad_norm:.6f}')
                     print(f'  Speed: {samples_per_sec:.2f} samples/sec | Step Time: {step_time:.3f}s')
-                    print(f'  Image range: [{img.min():.3f}, {img.max():.3f}]')
-                    print(f'  Output range: [{output.min():.3f}, {output.max():.3f}]')
-                    print(f'  Mask range: [{mask.min():.3f}, {mask.max():.3f}]')
+                    print(f'  Image range: [{img.min():.6f}, {img.max():.6f}]')
+                    print(f'  Output range: [{output.min():.6f}, {output.max():.6f}] | Output sum: {output_sum:.2f}')
+                    print(f'  Mask range: [{mask.min():.6f}, {mask.max():.6f}] | Mask sum: {mask_sum:.2f} | Non-zero pixels: {mask_nonzero}')
+                    
+                    # 警告检查
+                    if grad_norm < 1e-6:
+                        print(f'  ⚠️  警告: 梯度范数接近0，模型可能已停止更新！')
+                    if output.max() < 1e-3:
+                        print(f'  ⚠️  警告: 模型输出几乎全为0，可能模型塌陷！')
+                    if mask_nonzero < mask.numel() * 0.01:  # 非零像素少于1%
+                        print(f'  ⚠️  警告: 掩码几乎全为背景（非零像素<1%），数据可能有问题！')
 
             # 训练集Epoch总结
             epoch_time = time.time() - epoch_start_time

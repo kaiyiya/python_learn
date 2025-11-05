@@ -69,10 +69,25 @@ class MyDataset(Dataset):
         img_ = TF.rotate(img_, angle, interpolation=InterpolationMode.BILINEAR, expand=False)
         mask_ = TF.rotate(mask_, angle, interpolation=InterpolationMode.NEAREST, expand=False)
 
-        # 转张量：img -> [0,1]，mask 若为0/255会变为0/1
+        # 转张量：img -> [0,1]，mask需要归一化
         img = TF.to_tensor(img_)
         mask = TF.to_tensor(mask_)
-
+        
+        # 处理mask：TF.to_tensor会将[0,255]缩放到[0,1]
+        # 如果mask最大值>1，说明可能是0-255范围，需要归一化
+        if mask.max() > 1.0:
+            mask = mask / 255.0
+        
+        # 二值化mask：如果mask值范围很小（可能是灰度图），需要二值化
+        # 否则保持原样（假设已经是0-1范围的二值图）
+        if mask.max() > 0.5:
+            # 如果最大值>0.5，说明前景像素存在，进行二值化
+            mask = (mask > 0.5).float()
+        else:
+            # 如果最大值很小，可能是数据本身几乎全为背景，保持原样
+            # 但输出警告信息（在训练时会显示）
+            pass
+        
         return img, mask
 
     def __len__(self):
