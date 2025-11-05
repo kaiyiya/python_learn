@@ -11,7 +11,10 @@ class Trainer(object):
         self.val_loader = val_loader
         self.model = model
         self.device = device
-        self.criterion = torch.nn.functional.binary_cross_entropy
+        # 使用BCEWithLogits以适配logits输出；pos_weight在每步动态计算
+        import torch.nn.functional as F
+        self.F = F
+        self.criterion = None  # 用F.binary_cross_entropy_with_logits按步构造
         self.optimizer = torch.optim.Adam(lr=0.001, params=model.parameters())
         self.epochs = 200
         self.model.to(device)
@@ -80,8 +83,15 @@ class Trainer(object):
                 img, mask = img.to(self.device), mask.float().to(self.device)
 
                 self.optimizer.zero_grad()
-                output = self.model(img)
-                loss = self.criterion(output, mask)
+                output = self.model(img)  # logits
+                
+                # 计算类别不平衡的权重：pos_weight = neg/pos（逐batch）
+                with torch.no_grad():
+                    pos = mask.sum()
+                    neg = mask.numel() - pos
+                    # 防止除零
+                    pos_weight = (neg / (pos + 1e-6)).clamp(min=1.0)
+                loss = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
                 loss.backward()
 
                 # 计算梯度范数（在step之前）
@@ -94,13 +104,15 @@ class Trainer(object):
                 with torch.no_grad():
                     # 检查数据是否正常
                     mask_sum = mask.sum().item()
-                    output_sum = output.sum().item()
+                    logits_sum = output.sum().item()
+                    probs = torch.sigmoid(output)
+                    output_sum = probs.sum().item()
                     mask_nonzero = (mask > 0.01).sum().item()  # 统计非零像素
                     
-                    iou = self.calculate_iou(output, mask).item()
-                    dice = self.calculate_dice(output, mask).item()
-                    accuracy = self.calculate_accuracy(output, mask).item()
-                    mae = self.calculate_mae(output, mask).item()
+                    iou = self.calculate_iou(probs, mask).item()
+                    dice = self.calculate_dice(probs, mask).item()
+                    accuracy = self.calculate_accuracy(probs, mask).item()
+                    mae = self.calculate_mae(probs, mask).item()
 
                 losses.append(loss.item())
                 ious.append(iou)
@@ -122,14 +134,14 @@ class Trainer(object):
                     print(f'  LR: {current_lr:.6f} | Grad Norm: {grad_norm:.6f}')
                     print(f'  Speed: {samples_per_sec:.2f} samples/sec | Step Time: {step_time:.3f}s')
                     print(f'  Image range: [{img.min():.6f}, {img.max():.6f}]')
-                    print(f'  Output range: [{output.min():.6f}, {output.max():.6f}] | Output sum: {output_sum:.2f}')
+                    print(f'  Logits range: [{output.min():.6f}, {output.max():.6f}] | Probs range: [{probs.min():.6f}, {probs.max():.6f}] | Prob sum: {output_sum:.2f}')
                     print(f'  Mask range: [{mask.min():.6f}, {mask.max():.6f}] | Mask sum: {mask_sum:.2f} | Non-zero pixels: {mask_nonzero}')
                     
                     # 警告检查
                     if grad_norm < 1e-6:
                         print(f'  ⚠️  警告: 梯度范数接近0，模型可能已停止更新！')
-                    if output.max() < 1e-3:
-                        print(f'  ⚠️  警告: 模型输出几乎全为0，可能模型塌陷！')
+                    if probs.max() < 1e-3:
+                        print(f'  ⚠️  警告: 概率输出几乎全为0，可能模型塌陷！')
                     if mask_nonzero < mask.numel() * 0.01:  # 非零像素少于1%
                         print(f'  ⚠️  警告: 掩码几乎全为背景（非零像素<1%），数据可能有问题！')
 
@@ -167,13 +179,18 @@ class Trainer(object):
                 with torch.no_grad():
                     for img, mask in self.val_loader:
                         img, mask = img.to(self.device), mask.float().to(self.device)
-                        output = self.model(img)
-                        vloss = self.criterion(output, mask)
+                        output = self.model(img)  # logits
+                        # 与训练相同的pos_weight策略
+                        pos = mask.sum()
+                        neg = mask.numel() - pos
+                        pos_weight = (neg / (pos + 1e-6)).clamp(min=1.0)
+                        vloss = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
                         val_losses.append(vloss.item())
-                        val_ious.append(self.calculate_iou(output, mask).item())
-                        val_dices.append(self.calculate_dice(output, mask).item())
-                        val_accuracies.append(self.calculate_accuracy(output, mask).item())
-                        val_maes.append(self.calculate_mae(output, mask).item())
+                        probs = torch.sigmoid(output)
+                        val_ious.append(self.calculate_iou(probs, mask).item())
+                        val_dices.append(self.calculate_dice(probs, mask).item())
+                        val_accuracies.append(self.calculate_accuracy(probs, mask).item())
+                        val_maes.append(self.calculate_mae(probs, mask).item())
 
                 print(f'验证集:')
                 print(f'  平均 Val Loss: {np.mean(val_losses):.6f}')

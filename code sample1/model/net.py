@@ -67,7 +67,8 @@ class UNet(nn.Module):
         dec2 = self.dec2(torch.cat((self.upconv2(dec3), enc2), dim=1))
         dec1 = self.dec1(torch.cat((self.upconv1(dec2), enc1), dim=1))
 
-        return torch.sigmoid(self.out_conv(dec1))
+        # 返回logits；在训练与评估处再做sigmoid
+        return self.out_conv(dec1)
 
 if __name__ == "__main__":
     x = torch.randn((1, 1, 256, 256))

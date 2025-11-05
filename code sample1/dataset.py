@@ -3,6 +3,7 @@ import torchvision
 from torch.utils.data import Dataset, random_split, DataLoader
 import os
 import random
+import numpy as np
 from PIL import Image
 from torchvision import transforms
 from torchvision.transforms import functional as TF
@@ -53,6 +54,12 @@ class MyDataset(Dataset):
         if mask_.mode != 'L':
             mask_ = mask_.convert('L')
         
+        # 检查原始掩码的像素值范围（在转换为tensor之前）
+        mask_array = np.array(mask_)
+        mask_min = mask_array.min()
+        mask_max = mask_array.max()
+        mask_unique = np.unique(mask_array)
+        
         # 同步数据增强：水平翻转 + 旋转，与原逻辑等价（随机角度±30°）
         # 对掩码使用最近邻插值，避免插值产生非0/1灰度
         rng = random.Random()
@@ -73,20 +80,25 @@ class MyDataset(Dataset):
         img = TF.to_tensor(img_)
         mask = TF.to_tensor(mask_)
         
-        # 处理mask：TF.to_tensor会将[0,255]缩放到[0,1]
-        # 如果mask最大值>1，说明可能是0-255范围，需要归一化
-        if mask.max() > 1.0:
+        # 处理mask：根据原始像素值范围判断如何处理
+        # 情况1: 如果是0/1标注（二值图像，像素值只有0和1）
+        if len(mask_unique) <= 2 and mask_max <= 1:
+            # 已经是0/1标注，直接使用，确保是float类型
+            mask = mask.float()
+        # 情况2: 如果是0-255范围的二值图像（0和255）
+        elif len(mask_unique) <= 2 and mask_max > 1:
+            # 归一化到0-1，然后二值化
             mask = mask / 255.0
-        
-        # 二值化mask：如果mask值范围很小（可能是灰度图），需要二值化
-        # 否则保持原样（假设已经是0-1范围的二值图）
-        if mask.max() > 0.5:
-            # 如果最大值>0.5，说明前景像素存在，进行二值化
             mask = (mask > 0.5).float()
+        # 情况3: 如果是0-255范围的灰度图像（有多个不同的值）
+        elif mask.max() > 1.0:
+            # 归一化到0-1，然后二值化（阈值0.5）
+            mask = mask / 255.0
+            mask = (mask > 0.5).float()
+        # 情况4: 如果已经是0-1范围的灰度图像
         else:
-            # 如果最大值很小，可能是数据本身几乎全为背景，保持原样
-            # 但输出警告信息（在训练时会显示）
-            pass
+            # 二值化（阈值0.5）
+            mask = (mask > 0.5).float()
         
         return img, mask
 

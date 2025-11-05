@@ -7,15 +7,14 @@ from model.training import Trainer
 import configs.config_loader as cfg_loader
 
 
-
 if __name__ == '__main__':
-    # 检查设备
+    # 设备
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f'使用设备: {device}')
 
     args = cfg_loader.get_config()
 
-    # 创建数据集（使用训练集目录）并划分训练/验证
+    # 数据集与划分
     full_dataset = MyDataset('data/train/img', 'data/train/gt')
     val_ratio = 0.2
     val_size = int(len(full_dataset) * val_ratio)
@@ -25,10 +24,10 @@ if __name__ == '__main__':
     train_loader = DataLoader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(dataset=val_dataset, batch_size=args.batch_size, shuffle=False)
 
-    # 创建模型
+    # 模型
     model = UNet(in_channels=1, out_channels=1)
 
-    # 创建训练器并开始训练（含验证集）
+    # 训练
     trainer = Trainer(train_loader, model, args, device, val_loader=val_loader)
     trainer.train_model()
 
