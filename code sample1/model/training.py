@@ -15,7 +15,7 @@ class Trainer(object):
         import torch.nn.functional as F
         self.F = F
         self.criterion = None  # 用F.binary_cross_entropy_with_logits按步构造
-        self.optimizer = torch.optim.Adam(lr=0.001, params=model.parameters())
+        self.optimizer = torch.optim.Adam(lr=0.00001, params=model.parameters())
         self.epochs = 200
         self.model.to(device)
 
@@ -39,6 +39,14 @@ class Trainer(object):
         intersection = (pred_binary * target_binary).sum()
         dice = (2.0 * intersection + smooth) / (pred_binary.sum() + target_binary.sum() + smooth)
         return dice
+
+    def dice_loss(self, logits, target, smooth=1e-6):
+        """Dice Loss 基于概率（对logits做sigmoid）"""
+        probs = torch.sigmoid(logits)
+        intersection = (probs * target).sum()
+        union = probs.sum() + target.sum()
+        dice = (2.0 * intersection + smooth) / (union + smooth)
+        return 1.0 - dice
 
     def calculate_accuracy(self, pred, target, threshold=0.5):
         """计算准确率"""
@@ -91,7 +99,9 @@ class Trainer(object):
                     neg = mask.numel() - pos
                     # 防止除零
                     pos_weight = (neg / (pos + 1e-6)).clamp(min=1.0)
-                loss = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
+                bce = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
+                dice = self.dice_loss(output, mask)
+                loss = bce + 0.5 * dice
                 loss.backward()
 
                 # 计算梯度范数（在step之前）
@@ -109,9 +119,11 @@ class Trainer(object):
                     output_sum = probs.sum().item()
                     mask_nonzero = (mask > 0.01).sum().item()  # 统计非零像素
                     
-                    iou = self.calculate_iou(probs, mask).item()
-                    dice = self.calculate_dice(probs, mask).item()
-                    accuracy = self.calculate_accuracy(probs, mask).item()
+                    # 使用较低阈值以缓解前景稀少（默认0.3）
+                    thr = 0.3
+                    iou = self.calculate_iou(probs, mask, threshold=thr).item()
+                    dice = self.calculate_dice(probs, mask, threshold=thr).item()
+                    accuracy = self.calculate_accuracy(probs, mask, threshold=thr).item()
                     mae = self.calculate_mae(probs, mask).item()
 
                 losses.append(loss.item())
@@ -184,12 +196,15 @@ class Trainer(object):
                         pos = mask.sum()
                         neg = mask.numel() - pos
                         pos_weight = (neg / (pos + 1e-6)).clamp(min=1.0)
-                        vloss = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
+                        bce_v = self.F.binary_cross_entropy_with_logits(output, mask, pos_weight=pos_weight)
+                        dice_v = self.dice_loss(output, mask)
+                        vloss = bce_v + 0.5 * dice_v
                         val_losses.append(vloss.item())
                         probs = torch.sigmoid(output)
-                        val_ious.append(self.calculate_iou(probs, mask).item())
-                        val_dices.append(self.calculate_dice(probs, mask).item())
-                        val_accuracies.append(self.calculate_accuracy(probs, mask).item())
+                        thr = 0.3
+                        val_ious.append(self.calculate_iou(probs, mask, threshold=thr).item())
+                        val_dices.append(self.calculate_dice(probs, mask, threshold=thr).item())
+                        val_accuracies.append(self.calculate_accuracy(probs, mask, threshold=thr).item())
                         val_maes.append(self.calculate_mae(probs, mask).item())
 
                 print(f'验证集:')
