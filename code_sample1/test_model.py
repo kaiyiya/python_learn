@@ -136,20 +136,21 @@ class ModelTester:
                 mask = mask.float().to(self.device)
                 
                 # 前向传播
-                output = self.model(img)
+                output = self.model(img)  # logits
+                probs = torch.sigmoid(output)  # 将logits转为概率，范围[0,1]
                 
-                # 计算损失
-                loss = F.binary_cross_entropy(output, mask)
+                # 计算损失（使用logits版本，与训练阶段保持一致）
+                loss = F.binary_cross_entropy_with_logits(output, mask)
                 
-                # 计算各种指标
-                iou = self.calculate_iou(output, mask, threshold).item()
-                dice = self.calculate_dice(output, mask, threshold).item()
-                accuracy = self.calculate_accuracy(output, mask, threshold).item()
-                precision = self.calculate_precision(output, mask, threshold).item()
-                recall = self.calculate_recall(output, mask, threshold).item()
-                f1 = self.calculate_f1_score(output, mask, threshold).item()
-                mae = self.calculate_mae(output, mask).item()
-                mse = self.calculate_mse(output, mask).item()
+                # 计算各种指标（使用概率进行评估）
+                iou = self.calculate_iou(probs, mask, threshold).item()
+                dice = self.calculate_dice(probs, mask, threshold).item()
+                accuracy = self.calculate_accuracy(probs, mask, threshold).item()
+                precision = self.calculate_precision(probs, mask, threshold).item()
+                recall = self.calculate_recall(probs, mask, threshold).item()
+                f1 = self.calculate_f1_score(probs, mask, threshold).item()
+                mae = self.calculate_mae(probs, mask).item()
+                mse = self.calculate_mse(probs, mask).item()
                 
                 # 记录指标
                 all_metrics['loss'].append(loss.item())
@@ -171,7 +172,7 @@ class ModelTester:
                 
                 # 保存可视化结果
                 if save_results and batch_idx < 5:  # 只保存前5个批次的可视化结果
-                    self.visualize_results(img, mask, output, batch_idx, output_dir, threshold)
+                    self.visualize_results(img, mask, probs, batch_idx, output_dir, threshold)
         
         # 计算平均指标
         avg_metrics = {k: np.mean(v) for k, v in all_metrics.items()}
