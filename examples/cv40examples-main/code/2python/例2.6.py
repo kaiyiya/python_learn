@@ -8,8 +8,7 @@ Created on Sat May  8 14:12:31 2021
 李立宗 著     电子工业出版社
 """
 
-
-a = [5,8,6,2]
-print("删除前a=",a)
+a = [5, 8, 6, 2]
+print("删除前a=", a)
 del a[2]
-print("删除后a=",a)
+print("删除后a=", a)

@@ -8,7 +8,7 @@ Created on Fri May 14 10:56:57 2021
 李立宗 著     电子工业出版社
 """
 
-
 import cv2
-lena=cv2.imread("lenacolor.png")
+
+lena = cv2.imread("lenacolor.png")
 print(lena)

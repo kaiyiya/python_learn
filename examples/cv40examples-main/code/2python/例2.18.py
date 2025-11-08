@@ -8,6 +8,5 @@ Created on Mon May 10 21:17:30 2021
 李立宗 著     电子工业出版社
 """
 
-
-for x in range(1,5):
-    print(x,"循环")
+for x in range(1, 5):
+    print(x, "循环")

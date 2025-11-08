@@ -8,15 +8,14 @@ Created on Mon May 10 21:17:03 2021
 李立宗 著     电子工业出版社
 """
 
-#使用三个参数
-a = range(1,10,3)
+# 使用三个参数
+a = range(1, 10, 3)
 print(a)
-b=list(a)
+b = list(a)
 print(b)
-#默认步长
-c = range(1,5)
+# 默认步长
+c = range(1, 5)
 print(list(c))
-#默认初始值为0
+# 默认初始值为0
 d = range(5)
 print(list(d))
-

@@ -8,15 +8,13 @@ Created on Sat May  8 14:35:53 2021
 李立宗 著     电子工业出版社
 """
 
-
-a = (1,2,3)
-b = (4,5,6)
-print("a=",a)
-print("b=",b)
+a = (1, 2, 3)
+b = (4, 5, 6)
+print("a=", a)
+print("b=", b)
 c = a + b
-print("c=",c)
+print("c=", c)
 l = len(c)
-print("len(c)=",l)
+print("len(c)=", l)
 d = a * 3
-print("a*3=",d)
-
+print("a*3=", d)

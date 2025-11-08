@@ -7,7 +7,7 @@ Created on Sat May  8 14:08:33 2021
 李立宗 著     电子工业出版社
 """
 
-a = [5,8,7,3]
-print("添加前a=",a)
+a = [5, 8, 7, 3]
+print("添加前a=", a)
 a.append(666)
-print("添加后a=",a)
+print("添加后a=", a)

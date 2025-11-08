@@ -8,11 +8,11 @@ Created on Wed May 12 21:05:48 2021
 李立宗 著     电子工业出版社
 """
 
-
 import myModules as m
-a=9
-b=m.x2(a)
-c=m.x10(a)
-print("a=",a)
-print("a的平方:",b)
-print("a的10倍:",c)
+
+a = 9
+b = m.x2(a)
+c = m.x10(a)
+print("a=", a)
+print("a的平方:", b)
+print("a的10倍:", c)

@@ -8,7 +8,6 @@ Created on Wed May 12 07:04:11 2021
 李立宗 著     电子工业出版社
 """
 
-
 i = 0
 while i < 5:
     print(i)

@@ -9,14 +9,14 @@ Created on Mon May 10 11:02:07 2021
 """
 
 print("遍历列表示例：")
-a = [7,9,8]
+a = [7, 9, 8]
 for x in a:
     print(x)
-print("遍历元组示例：")    
-b=(1,7,1)
+print("遍历元组示例：")
+b = (1, 7, 1)
 for x in b:
     print(x)
-print("遍历字符串示例：")        
-s="PYTHON"
+print("遍历字符串示例：")
+s = "PYTHON"
 for x in s:
     print(x)

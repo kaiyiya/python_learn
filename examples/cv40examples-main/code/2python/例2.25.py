@@ -8,10 +8,10 @@ Created on Wed May 12 21:05:48 2021
 李立宗 著     电子工业出版社
 """
 
-
 import random
-x=[]
+
+x = []
 for i in range(7):
-    r=random.randint(0,9)
+    r = random.randint(0, 9)
     x.append(r)
 print(x)

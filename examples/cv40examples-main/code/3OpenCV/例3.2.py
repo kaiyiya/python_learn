@@ -8,10 +8,10 @@ Created on Fri May 14 10:58:06 2021
 李立宗 著     电子工业出版社
 """
 
-
 import cv2
-lena=cv2.imread("lena.bmp")
-cv2.imshow("demo1", lena )
-cv2.imshow("demo2", lena )
+
+lena = cv2.imread("lena.bmp")
+cv2.imshow("demo1", lena)
+cv2.imshow("demo2", lena)
 cv2.waitKey()
 cv2.destroyAllWindows()

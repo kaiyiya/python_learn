@@ -8,10 +8,9 @@ Created on Mon May 10 11:02:07 2021
 李立宗 著     电子工业出版社
 """
 
-
-a=input("请输入a:")
-b=input("请输入b:")
-a=int(a)
-b=int(b)
-big=(a if a>b else b)
-print("大数是:",big)
+a = input("请输入a:")
+b = input("请输入b:")
+a = int(a)
+b = int(b)
+big = (a if a > b else b)
+print("大数是:", big)

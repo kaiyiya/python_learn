@@ -9,13 +9,14 @@ Created on Mon Sep 20 20:06:20 2021
 """
 import cv2
 import numpy as np
-img=cv2.imread("x.jpg")
+
+img = cv2.imread("x.jpg")
 hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-min_HSV = np.array([0 ,10,80], dtype = "uint8")
-max_HSV = np.array([33, 255, 255], dtype = "uint8")
+min_HSV = np.array([0, 10, 80], dtype="uint8")
+max_HSV = np.array([33, 255, 255], dtype="uint8")
 mask = cv2.inRange(hsv, min_HSV, max_HSV)
-reusult = cv2.bitwise_and(img,img, mask= mask)
-cv2.imshow("img",img)
-cv2.imshow("reusult",reusult)
+reusult = cv2.bitwise_and(img, img, mask=mask)
+cv2.imshow("img", img)
+cv2.imshow("reusult", reusult)
 cv2.waitKey()
 cv2.destroyAllWindows()

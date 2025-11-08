@@ -8,7 +8,7 @@ Created on Fri May 14 10:58:59 2021
 李立宗 著     电子工业出版社
 """
 
-
 import cv2
-lena=cv2.imread("lena.bmp")
-r=cv2.imwrite("result.bmp",lena)
+
+lena = cv2.imread("lena.bmp")
+r = cv2.imwrite("resultb.bmp", lena)

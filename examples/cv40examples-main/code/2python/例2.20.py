@@ -8,8 +8,7 @@ Created on Wed May 12 07:06:29 2021
 李立宗 著     电子工业出版社
 """
 
-
-a = [7,9,8,666]
+a = [7, 9, 8, 666]
 i = 0
 while i < len(a):
     print(a[i])

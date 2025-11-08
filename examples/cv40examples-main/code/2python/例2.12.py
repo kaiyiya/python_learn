@@ -8,10 +8,9 @@ Created on Sun May  9 07:18:10 2021
 李立宗 著     电子工业出版社11
 """
 
-
-s=input("请输入成绩：")
-s=int(s)
-if s>90:
+s = input("请输入成绩：")
+s = int(s)
+if s > 90:
     print("A级")
 else:
     print("加油！")

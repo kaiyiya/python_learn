@@ -8,19 +8,19 @@ Created on Wed May 12 17:33:07 2021
 李立宗 著     电子工业出版社
 """
 
-#abs绝对值
+# abs绝对值
 x = -45
 print(abs(x))
-#pow指数计算b^e/2^3=8
+# pow指数计算b^e/2^3=8
 b = 2
 e = 3
-r = pow(b,e)
+r = pow(b, e)
 print(r)
-#sorted排序
-a = [1,2,3,0,5]
+# sorted排序
+a = [1, 2, 3, 0, 5]
 b = sorted(a)
 print(b)
-#max最大值、min最小值、sum求和
+# max最大值、min最小值、sum求和
 print(max(a))
 print(min(a))
 print(sum(a))

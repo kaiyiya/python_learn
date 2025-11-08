@@ -8,16 +8,15 @@ Created on Sun May  9 07:18:10 2021
 李立宗 著     电子工业出版社
 """
 
-
-s=input("请输入成绩：")
-s=int(s)
-if s>90:
+s = input("请输入成绩：")
+s = int(s)
+if s > 90:
     print("A级")
-elif s>80:
+elif s > 80:
     print("B级")
-elif s>70:
+elif s > 70:
     print("C级")
-elif s>=60:
+elif s >= 60:
     print("D级")
 else:
     print("E级")
