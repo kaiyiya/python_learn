@@ -117,7 +117,7 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
 
                 scaler.unscale_(self.optimizer)  # 取消缩放，使梯度恢复原尺度，便于梯度裁剪
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # 对梯度做裁剪，防止梯度爆炸，例如限制最大范数为1
-                scaler.step(self.optimizer)  # 使用缩放过的梯度更新参数
+                scaler.step(self.optimizer)  # 使用缩放过的梯度更新参数d
                 scaler.update()  # 更新scaler的缩放因子，自适应下一次迭代
 
                 with torch.no_grad():  # 下面是评估指标与监控信息，不需要梯度
