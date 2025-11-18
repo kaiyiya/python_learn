@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="Black">
-    <option name="sdkName" value="Python 3.13" />
+    <option name="sdkName" value="C:\Users\zczy\anaconda3" />
   </component>
-  <component name="ProjectRootManager" version="2" project-jdk-name="E:\Anaconda" project-jdk-type="Python SDK" />
+  <component name="ProjectRootManager" version="2" project-jdk-name="pytorch_cpu_env (3)" project-jdk-type="Python SDK" />
   <component name="PythonCompatibilityInspectionAdvertiser">
     <option name="version" value="3" />
   </component>
