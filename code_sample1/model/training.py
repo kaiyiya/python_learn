@@ -253,8 +253,8 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                                     bbox_inches='tight')  # 保存差异图
                         plt.close()  # 关闭图像
                         break  # 只可视化第一个batch，防止耗时过多
-            except Exception:  # 捕获可视化过程的所有异常，避免影响训练流程
-                pass  # 如果失败则忽略，不影响训练主流程
+            except Exception as e:
+                print(f'可视化失败: {e}')
 
             if self.val_loader is not None:  # 如果存在验证集，则执行验证
                 self.model.eval()  # 切换到评估模式，关闭Dropout等
