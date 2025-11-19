@@ -171,7 +171,7 @@ class ModelTester:
                 print(f'  MAE: {mae:.6f} | MSE: {mse:.6f}')
                 
                 # 保存可视化结果
-                if save_results and batch_idx < 5:  # 只保存前5个批次的可视化结果
+                if save_results:
                     self.visualize_results(img, mask, probs, batch_idx, output_dir, threshold)
         
         # 计算平均指标
