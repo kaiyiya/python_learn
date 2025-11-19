@@ -101,7 +101,7 @@ class ModelTester:
         """计算均方误差 (MSE)"""
         return ((pred - target) ** 2).mean()
     
-    def test_dataset(self, test_loader, threshold=0.5, save_results=False, output_dir='test_results'):
+    def test_dataset(self, test_loader, threshold=0.2, save_results=False, output_dir='test_results'):
         """
         在测试集上评估模型
         
@@ -194,38 +194,71 @@ class ModelTester:
         
         return avg_metrics, std_metrics
     
-    def visualize_results(self, img, mask, output, batch_idx, output_dir, threshold=0.5):
-        """可视化测试结果"""
-        # 转换回numpy格式用于可视化
-        img_np = img[0, 0].cpu().numpy()
-        mask_np = mask[0, 0].cpu().numpy()
-        output_np = output[0, 0].cpu().numpy()
-        pred_binary = (output_np > threshold).astype(np.float32)
+    def visualize_results(self, img, mask, probs, batch_idx, output_dir, threshold=0.2):
+        """可视化测试结果（两组图与训练阶段保持一致）"""
+        img_np = img[0, 0].detach().cpu().numpy()
+        mask_np = mask[0, 0].detach().cpu().numpy()
+        prob_np = probs[0, 0].detach().cpu().numpy()
+        pred_np_t02 = (prob_np > threshold).astype(np.float32)
+        pred_np_t05 = (prob_np > 0.5).astype(np.float32)
         
-        # 创建可视化图像
-        fig, axes = plt.subplots(1, 4, figsize=(16, 4))
-        
+        # 第一组：输入/概率/预测/真值
+        fig, axes = plt.subplots(1, 4, figsize=(18, 4))
         axes[0].imshow(img_np, cmap='gray')
-        axes[0].set_title('Input Image')
+        axes[0].set_title('Input')
         axes[0].axis('off')
         
-        axes[1].imshow(mask_np, cmap='gray')
-        axes[1].set_title('Ground Truth')
+        im1 = axes[1].imshow(prob_np, cmap='viridis', vmin=0.2, vmax=0.8)
+        axes[1].set_title('Prob (0.2~0.8)')
         axes[1].axis('off')
+        plt.colorbar(im1, ax=axes[1])
         
-        axes[2].imshow(output_np, cmap='gray')
-        axes[2].set_title('Prediction (Probability)')
+        axes[2].imshow(pred_np_t02, cmap='gray')
+        axes[2].set_title(f'Pred th={threshold:.2f}')
         axes[2].axis('off')
         
-        axes[3].imshow(pred_binary, cmap='gray')
-        axes[3].set_title(f'Prediction (Binary, threshold={threshold})')
+        axes[3].imshow(mask_np, cmap='gray')
+        axes[3].set_title('GT')
         axes[3].axis('off')
         
         plt.tight_layout()
         plt.savefig(os.path.join(output_dir, f'batch_{batch_idx}_result.png'), dpi=150, bbox_inches='tight')
         plt.close()
         
-        print(f'  ✓ 可视化结果已保存: batch_{batch_idx}_result.png')
+        # 第二组：轮廓叠加 + 阈值对比 + 差异图
+        fig2, axes2 = plt.subplots(1, 4, figsize=(22, 4))
+        axes2[0].imshow(img_np, cmap='gray')
+        axes2[0].contour(mask_np, levels=[0.5], colors='lime', linewidths=1)
+        axes2[0].contour(pred_np_t02, levels=[0.5], colors='red', linewidths=1)
+        axes2[0].set_title('Overlay: GT(green) & Pred(red)')
+        axes2[0].axis('off')
+        
+        axes2[1].imshow(pred_np_t02, cmap='gray')
+        axes2[1].set_title(f'Pred th={threshold:.2f}')
+        axes2[1].axis('off')
+        
+        axes2[2].imshow(pred_np_t05, cmap='gray')
+        axes2[2].set_title('Pred th=0.5')
+        axes2[2].axis('off')
+        
+        fp = (pred_np_t02 == 1) & (mask_np == 0)
+        fn = (pred_np_t02 == 0) & (mask_np == 1)
+        tp = (pred_np_t02 == 1) & (mask_np == 1)
+        h, w = mask_np.shape
+        diff = np.zeros((h, w, 3), dtype=np.float32)
+        diff[fp] = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        diff[fn] = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+        diff[tp] = np.array([0.0, 1.0, 0.0], dtype=np.float32) * 0.3
+        
+        axes2[3].imshow(diff)
+        axes2[3].set_title('Diff: FP(red) FN(blue) TP(green)')
+        axes2[3].axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, f'batch_{batch_idx}_result_diff.png'), dpi=150, bbox_inches='tight')
+        plt.close()
+        
+        print(f'  ✓ 可视化结果已保存: batch_{batch_idx}_result(.png/_diff.png)')
 
 
 def main():
@@ -238,8 +271,8 @@ def main():
                         help='测试掩码目录')
     parser.add_argument('--batch_size', type=int, default=4,
                         help='测试批次大小')
-    parser.add_argument('--threshold', type=float, default=0.5,
-                        help='二值化阈值')
+    parser.add_argument('--threshold', type=float, default=0.2,
+                        help='二值化阈值（与训练阶段一致，默认0.2）')
     parser.add_argument('--save_results', action='store_true',
                         help='是否保存可视化结果')
     parser.add_argument('--output_dir', type=str, default='test_results',
@@ -255,7 +288,7 @@ def main():
     print(f'  掩码目录: {args.test_mask_dir}')
     
     try:
-        test_dataset = MyDataset(args.test_img_dir, args.test_mask_dir)
+        test_dataset = MyDataset(args.test_img_dir, args.test_mask_dir, augment=False)
         test_loader = DataLoader(
             dataset=test_dataset,
             batch_size=args.batch_size,

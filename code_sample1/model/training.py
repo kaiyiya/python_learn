@@ -187,7 +187,6 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
 
             try:  # 使用try避免可视化过程中出现错误导致训练中断
                 os.makedirs('PredvsGT', exist_ok=True)  # 创建保存图片的文件夹PredvsGT，若已存在则忽略
-                os.makedirs('PredvsGTDiff', exist_ok=True)  # 创建保存图片的文件夹PredvsGTDiff，若已存在则忽略
                 with torch.no_grad():  # 可视化阶段不需要梯度
                     for vis_img, vis_mask in self.train_loader:  # 从训练集中取一批次用于可视化
                         vis_img = vis_img.to(self.device)  # 将可视化图像搬到设备
@@ -249,7 +248,7 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                         axes2[3].set_title('Diff: FP(red) FN(blue) TP(green)')  # 给出图例说明
                         axes2[3].axis('off')  # 关闭坐标轴
                         plt.tight_layout()  # 调整布局
-                        plt.savefig(os.path.join('PredvsGTDiff', f'epoch_{epoch:03d}_diff.png'), dpi=150,
+                        plt.savefig(os.path.join('PredvsGT', f'epoch_{epoch:03d}_diff.png'), dpi=150,
                                     bbox_inches='tight')  # 保存差异图
                         plt.close()  # 关闭图像
                         break  # 只可视化第一个batch，防止耗时过多
