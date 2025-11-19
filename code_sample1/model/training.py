@@ -242,9 +242,9 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                         tp = (pred_np_t02 == 1) & (mask_np == 1)  # 找出真阳性区域，例如正确覆盖病灶
                         h, w = mask_np.shape  # 获取图像高度和宽度，用于创建彩色差异图
                         diff = np.zeros((h, w, 3), dtype=np.float32)  # 初始化RGB差异图，默认全黑
-                        diff[fp] = [1.0, 0.0, 0.0]  # 将假阳性区域标红
-                        diff[fn] = [0.0, 0.0, 1.0]  # 将假阴性区域标蓝
-                        diff[tp] = [0.0, 1.0, 0.0] * 0.3  # 将真阳性区域涂成淡绿色，让用户直观看到正确区域
+                        diff[fp] = np.array([1.0, 0.0, 0.0], dtype=np.float32)  # 将假阳性区域标红
+                        diff[fn] = np.array([0.0, 0.0, 1.0], dtype=np.float32)  # 将假阴性区域标蓝
+                        diff[tp] = np.array([0.0, 1.0, 0.0], dtype=np.float32) * 0.3  # 将真阳性区域涂成淡绿色，让用户直观看到正确区域
                         axes2[3].imshow(diff)  # 显示差异图
                         axes2[3].set_title('Diff: FP(red) FN(blue) TP(green)')  # 给出图例说明
                         axes2[3].axis('off')  # 关闭坐标轴
