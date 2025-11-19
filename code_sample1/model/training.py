@@ -14,7 +14,7 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
         self.model = model  # 保存需要训练的模型对象
         self.device = device  # 保存训练所使用的设备（CPU或GPU）
         self.F = torch.nn.functional  # 保存torch.nn.functional引用，后面用于计算损失
-        self.optimizer = torch.optim.Adam(lr=0.0003, params=model.parameters())  # 使用Adam优化器，学习率0.0003，传入模型参数
+        self.optimizer = torch.optim.Adam(lr=0.00005, params=model.parameters())  # 使用Adam优化器，学习率0.0003，传入模型参数
         self.epochs = 200  # 设定训练总轮数为200，相当于循环200次训练集
         self.model.to(device)  # 将模型移动到指定的device，比如GPU，加速训练
         self.pos_weight = torch.tensor(16.0, device=self.device)  # 定义正样本权重pos_weight=16，在前景稀少时加大正例损失权
