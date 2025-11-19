@@ -13,9 +13,7 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
         self.val_loader = val_loader  # 保存验证集的DataLoader，如果传入则用于训练后验证
         self.model = model  # 保存需要训练的模型对象
         self.device = device  # 保存训练所使用的设备（CPU或GPU）
-        import torch.nn.functional as F  # 在构造函数内部导入F，避免全局污染，便于调用函数式API
-        self.F = F  # 保存torch.nn.functional引用，后面用于计算损失
-        self.criterion = None  # 预留损失函数位置，这里通过F临时构造，所以先置None示意
+        self.F = torch.nn.functional  # 保存torch.nn.functional引用，后面用于计算损失
         self.optimizer = torch.optim.Adam(lr=0.0003, params=model.parameters())  # 使用Adam优化器，学习率0.0003，传入模型参数
         self.epochs = 200  # 设定训练总轮数为200，相当于循环200次训练集
         self.model.to(device)  # 将模型移动到指定的device，比如GPU，加速训练
@@ -95,7 +93,6 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
             for i, (img, mask) in enumerate(self.train_loader):  # 遍历训练集的每个batch，i是批次索引
                 step_start_time = time.time()  # 记录当前batch开始时间
                 img, mask = img.to(self.device), mask.float().to(self.device)  # 将图像和掩码移动到设备上，并确保掩码为浮点数
-
                 self.optimizer.zero_grad(set_to_none=True)  # 梯度清零，set_to_none=True节省内存并加速
                 autocast_kwargs = {}  # 初始化autocast参数字典，默认空
                 if use_bf16:  # 如果GPU支持bfloat16
@@ -119,7 +116,6 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                 torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # 对梯度做裁剪，防止梯度爆炸，例如限制最大范数为1
                 scaler.step(self.optimizer)  # 使用缩放过的梯度更新参数d
                 scaler.update()  # 更新scaler的缩放因子，自适应下一次迭代
-
                 with torch.no_grad():  # 下面是评估指标与监控信息，不需要梯度
                     mask_sum = mask.sum().item()  # 计算掩码中正样本总和，示例：判断前景像素量
                     logits_sum = output.sum().item()  # 计算logits总和，可观察输出偏置
@@ -148,6 +144,7 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                 if i % 10 == 0:  # 每10个batch打印一次日志，避免输出过多
                     print(f'\n[Epoch {epoch}/{self.epochs}] [Step {i}/{len(self.train_loader)}]')  # 打印基本进度
                     print(f'  Loss: {loss.item():.6f}')  # 打印损失值，示例：0.123456
+                    print(f'Logits sum: {logits_sum:.2f} | Prob sum: {output_sum:.2f}')
                     print(
                         f'  IoU: {iou:.4f} | Dice: {dice:.4f} | Acc: {accuracy:.4f} | MAE: {mae:.6f}')  # 打印各类指标，帮助判断模型表现
                     print(f'  LR: {current_lr:.6f} | Grad Norm: {grad_norm:.6f}')  # 打印学习率与梯度范数，用于调参
@@ -190,6 +187,7 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
 
             try:  # 使用try避免可视化过程中出现错误导致训练中断
                 os.makedirs('PredvsGT', exist_ok=True)  # 创建保存图片的文件夹PredvsGT，若已存在则忽略
+                os.makedirs('PredvsGTDiff', exist_ok=True)  # 创建保存图片的文件夹PredvsGTDiff，若已存在则忽略
                 with torch.no_grad():  # 可视化阶段不需要梯度
                     for vis_img, vis_mask in self.train_loader:  # 从训练集中取一批次用于可视化
                         vis_img = vis_img.to(self.device)  # 将可视化图像搬到设备
@@ -206,18 +204,18 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                         mask_np = vis_mask[0, 0].detach().cpu().numpy()  # 获取真值掩码
 
                         fig, axes = plt.subplots(1, 4, figsize=(18, 4))  # 创建1行4列子图，展示不同图像
-                        axes[0].imshow(img_np, cmap='gray');
-                        axes[0].set_title('Input');
+                        axes[0].imshow(img_np, cmap='gray')
+                        axes[0].set_title('Input')
                         axes[0].axis('off')  # 显示原始输入图像，关闭坐标轴
                         im1 = axes[1].imshow(prob_np, cmap='viridis', vmin=0.2, vmax=0.8)  # 显示概率图，并在0.2~0.8之间着色
-                        axes[1].set_title('Prob (0.2~0.8)');
-                        axes[1].axis('off');
+                        axes[1].set_title('Prob (0.2~0.8)')
+                        axes[1].axis('off')
                         plt.colorbar(im1, ax=axes[1])  # 添加颜色条用于读取概率值
-                        axes[2].imshow(pred_np_t02, cmap='gray');
-                        axes[2].set_title('Pred th=0.2');
+                        axes[2].imshow(pred_np_t02, cmap='gray')
+                        axes[2].set_title('Pred th=0.2')
                         axes[2].axis('off')  # 显示阈值0.2的预测结果
-                        axes[3].imshow(mask_np, cmap='gray');
-                        axes[3].set_title('GT');
+                        axes[3].imshow(mask_np, cmap='gray')
+                        axes[3].set_title('GT')
                         axes[3].axis('off')  # 显示真值掩码
                         plt.tight_layout()  # 调整子图间距，避免重叠
                         plt.savefig(os.path.join('PredvsGT', f'epoch_{epoch:03d}.png'), dpi=150,
@@ -232,11 +230,11 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                         axes2[0].set_title('Overlay: GT(green) & Pred(red)')  # 标题说明颜色含义
                         axes2[0].axis('off')  # 关闭坐标轴
 
-                        axes2[1].imshow(pred_np_t02, cmap='gray');
-                        axes2[1].set_title('Pred th=0.2');
+                        axes2[1].imshow(pred_np_t02, cmap='gray')
+                        axes2[1].set_title('Pred th=0.2')
                         axes2[1].axis('off')  # 显示阈值0.2预测
-                        axes2[2].imshow(pred_np_t05, cmap='gray');
-                        axes2[2].set_title('Pred th=0.5');
+                        axes2[2].imshow(pred_np_t05, cmap='gray')
+                        axes2[2].set_title('Pred th=0.5')
                         axes2[2].axis('off')  # 显示阈值0.5预测，用于比较阈值影响
 
                         fp = (pred_np_t02 == 1) & (mask_np == 0)  # 找出假阳性区域，例如预测病灶但实际背景
@@ -251,7 +249,7 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                         axes2[3].set_title('Diff: FP(red) FN(blue) TP(green)')  # 给出图例说明
                         axes2[3].axis('off')  # 关闭坐标轴
                         plt.tight_layout()  # 调整布局
-                        plt.savefig(os.path.join('PredvsGT', f'epoch_{epoch:03d}_diff.png'), dpi=150,
+                        plt.savefig(os.path.join('PredvsGTDiff', f'epoch_{epoch:03d}_diff.png'), dpi=150,
                                     bbox_inches='tight')  # 保存差异图
                         plt.close()  # 关闭图像
                         break  # 只可视化第一个batch，防止耗时过多
