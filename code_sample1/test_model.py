@@ -130,6 +130,7 @@ class ModelTester:
         print('\n开始测试...')
         print('=' * 80)
         
+        montage_samples = []
         with torch.no_grad():
             sample_counter = 0
             for batch_idx, (img, mask) in enumerate(test_loader):
@@ -174,8 +175,12 @@ class ModelTester:
                 # 保存可视化结果
                 if save_results:
                     sample_counter = self.visualize_results(
-                        img, mask, probs, batch_idx, output_dir, threshold, sample_counter
+                        img, mask, probs, batch_idx, output_dir, threshold, sample_counter, montage_samples
                     )
+        
+        if save_results and montage_samples:
+            self.save_montage(montage_samples, output_dir)
+            print(f'  ✓ 汇总大图已保存: {os.path.join(output_dir, "all_samples_overview.png")}')
         
         # 计算平均指标
         avg_metrics = {k: np.mean(v) for k, v in all_metrics.items()}
@@ -197,7 +202,7 @@ class ModelTester:
         
         return avg_metrics, std_metrics
     
-    def visualize_results(self, img, mask, probs, batch_idx, output_dir, threshold=0.2, start_idx=0):
+    def visualize_results(self, img, mask, probs, batch_idx, output_dir, threshold=0.2, start_idx=0, montage_samples=None):
         """可视化测试结果（两组图与训练阶段保持一致），保存整批所有样本"""
         batch_size = img.size(0)
         for sample_idx in range(batch_size):
@@ -272,8 +277,38 @@ class ModelTester:
             )
             plt.close()
         
+            if montage_samples is not None:
+                montage_samples.append({
+                    'img': img_np,
+                    'pred': pred_np_t02,
+                    'gt': mask_np
+                })
+        
         print(f'  ✓ 可视化结果已保存: samples {start_idx:03d}-{start_idx + batch_size - 1:03d}')
         return start_idx + batch_size
+
+    def save_montage(self, samples, output_dir):
+        """生成所有样本的汇总大图（每行：Input | Pred | GT）"""
+        n = len(samples)
+        fig_height = max(4, n * 1.2)
+        fig, axes = plt.subplots(n, 3, figsize=(12, fig_height))
+        
+        if n == 1:
+            axes = np.expand_dims(axes, axis=0)
+        
+        titles = ['Input', 'Pred', 'GT']
+        for row_idx, sample in enumerate(samples):
+            data = [sample['img'], sample['pred'], sample['gt']]
+            for col_idx in range(3):
+                ax = axes[row_idx, col_idx]
+                ax.imshow(data[col_idx], cmap='gray')
+                if row_idx == 0:
+                    ax.set_title(titles[col_idx])
+                ax.axis('off')
+        
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, 'all_samples_overview.png'), dpi=200, bbox_inches='tight')
+        plt.close()
 
 
 def main():
