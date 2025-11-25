@@ -8,6 +8,27 @@ import random
 import numpy as np
 
 
+class DirectImageDataset(Dataset):
+    """
+    直接加载目录下图片文件的数据集类
+    用于处理没有类别子文件夹的图片目录
+    """
+    def __init__(self, root, files, transform):
+        self.root = root
+        self.files = files
+        self.transform = transform
+    
+    def __getitem__(self, index):
+        img_path = os.path.join(self.root, self.files[index])
+        image = Image.open(img_path).convert('RGB')
+        if self.transform:
+            image = self.transform(image)
+        return image, 0  # 返回0作为伪标签（不需要分类）
+    
+    def __len__(self):
+        return len(self.files)
+
+
 class ContextEncoderDataset(Dataset):
     """
     上下文编码器数据集类
@@ -26,6 +47,12 @@ class ContextEncoderDataset(Dataset):
             self.dataset = self._load_cifar10_dataset()
         else:
             raise ValueError(f"不支持的数据集类型: {opt.dataset}")
+        
+        # 验证数据集
+        if len(self.dataset) == 0:
+            raise RuntimeError(f"数据集为空！请检查数据路径: {opt.dataroot}")
+        
+        print(f"✓ 数据集加载成功: {len(self.dataset)} 个样本")
     
     def _load_folder_dataset(self):
         """加载文件夹格式的数据集"""
@@ -35,15 +62,43 @@ class ContextEncoderDataset(Dataset):
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
-        # 1. Resize: 256×256 → 128×128
-        # 2. CenterCrop: 128×128 → 128×128（确保正方形）
-        # 3. ToTensor: 128×128×3 → 3×128×128，像素值0-255 → 0-1
-        # 4. Normalize: 像素值0-1 → -1到1
         
-        return torchvision.datasets.ImageFolder(
-            root=self.opt.dataroot,
-            transform=transform
-        )
+        dataroot = self.opt.dataroot
+        
+        # 支持的图片格式
+        valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif')
+        
+        try:
+            # 首先尝试使用ImageFolder（适用于有类别子文件夹的情况）
+            if os.path.isdir(dataroot):
+                # 检查是否有子目录（类别文件夹）
+                subdirs = [d for d in os.listdir(dataroot) 
+                          if os.path.isdir(os.path.join(dataroot, d))]
+                
+                if subdirs:
+                    # 有子目录，使用ImageFolder
+                    dataset = torchvision.datasets.ImageFolder(
+                        root=dataroot,
+                        transform=transform
+                    )
+                else:
+                    # 没有子目录，直接读取目录下的图片文件
+                    image_files = [f for f in os.listdir(dataroot) 
+                                 if f.lower().endswith(valid_extensions)]
+                    
+                    if not image_files:
+                        raise ValueError(f"数据集目录 {dataroot} 中没有找到图片文件")
+                    
+                    # 使用模块级别的DirectImageDataset类来加载图片
+                    dataset = DirectImageDataset(dataroot, image_files, transform)
+            
+            # 检查是否加载到数据
+            if len(dataset) == 0:
+                raise ValueError(f"数据集目录 {dataroot} 中没有找到图片文件")
+            return dataset
+        except Exception as e:
+            raise RuntimeError(f"加载数据集失败: {e}\n请检查数据路径是否正确，"
+                             f"确保 {dataroot} 目录存在且包含图片文件或类别子目录")
     
     def _load_cifar10_dataset(self):
         """加载CIFAR-10数据集"""
@@ -100,12 +155,11 @@ class ContextEncoderDataset(Dataset):
         return image[:, :, center_h_start:center_h_end, center_w_start:center_w_end]
     
     def __getitem__(self, index):
-        # 获取原始图像
+        # 获取原始图像 (shape: [3, H, W])
         image, _ = self.dataset[index]
         
-        # 如果是单张图像，需要添加batch维度
-        if len(image.shape) == 3:
-            image = image.unsqueeze(0)
+        # 添加batch维度以便处理 (shape: [1, 3, H, W])
+        image = image.unsqueeze(0)
         
         # 创建损坏的图像
         corrupted_image = self._create_corrupted_image(image)
@@ -113,7 +167,8 @@ class ContextEncoderDataset(Dataset):
         # 提取中心区域作为修复目标
         center_region = self._extract_center_region(image)
         
-        # 移除batch维度（DataLoader会自动添加）
+        # 移除batch维度（DataLoader会自动添加batch维度）
+        # 返回形状: [3, H, W] 和 [3, H/2, W/2]
         corrupted_image = corrupted_image.squeeze(0)
         center_region = center_region.squeeze(0)
         
@@ -207,5 +262,6 @@ if __name__ == '__main__':
                 
     except Exception as e:
         print(f"测试数据集时出错: {e}")
+        import traceback
+        traceback.print_exc()
         print("请确保数据路径正确")
-

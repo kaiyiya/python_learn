@@ -4,9 +4,6 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.utils as vutils
 import os
-import random
-
-from context_encoders_new.model.net import ContextEncoderGenerator, ContextEncoderDiscriminator, weights_init
 
 
 class ContextEncoderTrainer(object):
@@ -15,21 +12,16 @@ class ContextEncoderTrainer(object):
     实现GAN训练逻辑，包含生成器和判别器的对抗训练
     """
 
-    def __init__(self, train_loader, opt):
+    def __init__(self, train_loader, generator, discriminator, opt, device, val_loader=None, test_loader=None):
         self.opt = opt
         self.train_loader = train_loader
-        self.device = torch.device("cuda" if torch.cuda.is_available() and opt.cuda else "cpu")
+        self.val_loader = val_loader
+        self.test_loader = test_loader
+        self.device = device
 
-        # 设置随机种子
-        self._set_seed()
-
-        # 创建模型
-        self.netG = ContextEncoderGenerator(opt).to(self.device)
-        self.netD = ContextEncoderDiscriminator(opt).to(self.device)
-
-        # 应用权重初始化
-        self.netG.apply(weights_init)
-        self.netD.apply(weights_init)
+        # 使用传入的模型
+        self.netG = generator.to(self.device)
+        self.netD = discriminator.to(self.device)
 
         # 加载预训练模型（如果存在）
         self._load_checkpoints()
@@ -54,29 +46,32 @@ class ContextEncoderTrainer(object):
         print(f"生成器参数数量: {sum(p.numel() for p in self.netG.parameters())}")
         print(f"判别器参数数量: {sum(p.numel() for p in self.netD.parameters())}")
 
-    def _set_seed(self):
-        """设置随机种子"""
-        random.seed(self.opt.manual_seed)
-        torch.manual_seed(self.opt.manual_seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(self.opt.manual_seed)
-        print(f"随机种子设置为: {self.opt.manual_seed}")
-
     def _load_checkpoints(self):
         """加载检查点"""
         self.resume_epoch = 0
 
-        if self.opt.netG != '':
-            checkpoint = torch.load(self.opt.netG, map_location=self.device)
-            self.netG.load_state_dict(checkpoint['state_dict'])
-            self.resume_epoch = checkpoint['epoch']
-            print(f"加载生成器检查点: {self.opt.netG}")
+        if hasattr(self.opt, 'netG') and self.opt.netG != '':
+            if os.path.exists(self.opt.netG):
+                checkpoint = torch.load(self.opt.netG, map_location=self.device)
+                if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                    self.netG.load_state_dict(checkpoint['state_dict'])
+                    self.resume_epoch = checkpoint.get('epoch', 0)
+                else:
+                    self.netG.load_state_dict(checkpoint)
+                print(f"加载生成器检查点: {self.opt.netG}, epoch: {self.resume_epoch}")
 
-        if self.opt.netD != '':
-            checkpoint = torch.load(self.opt.netD, map_location=self.device)
-            self.netD.load_state_dict(checkpoint['state_dict'])
-            self.resume_epoch = checkpoint['epoch']
-            print(f"加载判别器检查点: {self.opt.netD}")
+        if hasattr(self.opt, 'netD') and self.opt.netD != '':
+            if os.path.exists(self.opt.netD):
+                checkpoint = torch.load(self.opt.netD, map_location=self.device)
+                if isinstance(checkpoint, dict) and 'state_dict' in checkpoint:
+                    self.netD.load_state_dict(checkpoint['state_dict'])
+                    resume_epoch_d = checkpoint.get('epoch', 0)
+                else:
+                    self.netD.load_state_dict(checkpoint)
+                    resume_epoch_d = 0
+                if resume_epoch_d > self.resume_epoch:
+                    self.resume_epoch = resume_epoch_d
+                print(f"加载判别器检查点: {self.opt.netD}, epoch: {resume_epoch_d}")
 
     def _create_directories(self):
         """创建输出目录"""
@@ -111,9 +106,12 @@ class ContextEncoderTrainer(object):
 
     def train_model(self):
         """主训练循环"""
-        print("开始训练...")
+        print(f'开始训练，共 {self.epochs} 个epoch')
+        print('=' * 80)
 
         for epoch in range(self.resume_epoch, self.epochs):
+            self.netG.train()
+            self.netD.train()
             epoch_losses = {'D': [], 'G_D': [], 'G_L2': []}
 
             for i, (corrupted_images, real_centers) in enumerate(self.train_loader):
@@ -132,7 +130,7 @@ class ContextEncoderTrainer(object):
                 self.netD.zero_grad()
 
                 # 训练判别器识别真实图像
-                output_real = self.netD(real_centers)#清除判别器网络的所有参数梯度
+                output_real = self.netD(real_centers)  # 清除判别器网络的所有参数梯度
                 # 调试信息：打印形状
                 if i == 0 and epoch == 0:
                     print(f"Debug - output_real shape: {output_real.shape}")
@@ -191,10 +189,22 @@ class ContextEncoderTrainer(object):
 
             # 打印epoch统计信息
             avg_losses = {k: sum(v) / len(v) for k, v in epoch_losses.items()}
-            print(f'Epoch [{epoch}/{self.epochs}] - '
-                  f'Avg Loss_D: {avg_losses["D"]:.4f} '
-                  f'Avg Loss_G_D: {avg_losses["G_D"]:.4f} '
-                  f'Avg Loss_G_L2: {avg_losses["G_L2"]:.4f}')
+            print(f'\n{"=" * 80}')
+            print(f'Epoch [{epoch}/{self.epochs}] 总结:')
+            print(f'  平均 Loss_D: {avg_losses["D"]:.6f}')
+            print(f'  平均 Loss_G_D: {avg_losses["G_D"]:.6f}')
+            print(f'  平均 Loss_G_L2: {avg_losses["G_L2"]:.6f}')
+            print(f'{"=" * 80}')
+
+            # 验证集评估
+            if self.val_loader is not None:
+                self._validate(epoch)
+
+            # 测试集评估（每个epoch或特定epoch）
+            if self.test_loader is not None:
+                # 可以选择每个epoch都测试，或者只在特定epoch测试
+                # 这里设置为每个epoch都测试，你也可以改为 epoch % 5 == 0 等
+                self._test(epoch)
 
             # 保存模型检查点
             self._save_checkpoints(epoch)
@@ -224,17 +234,121 @@ class ContextEncoderTrainer(object):
                           f'result/train/recon/recon_samples_epoch_{epoch:03d}.png',
                           normalize=True, nrow=4)
 
+    def _validate(self, epoch):
+        """在验证集上评估模型"""
+        self.netG.eval()
+        self.netD.eval()
+
+        val_losses = {'D': [], 'G_D': [], 'G_L2': []}
+
+        with torch.no_grad():
+            for corrupted_images, real_centers in self.val_loader:
+                corrupted_images = corrupted_images.to(self.device)
+                real_centers = real_centers.to(self.device)
+                batch_size = corrupted_images.size(0)
+
+                real_label = torch.full((batch_size, 1), 1.0, device=self.device)
+                fake_label = torch.full((batch_size, 1), 0.0, device=self.device)
+
+                # 判别器评估
+                output_real = self.netD(real_centers)
+                fake_centers = self.netG(corrupted_images)
+                output_fake = self.netD(fake_centers)
+
+                errD_real = self.criterion(output_real, real_label)
+                errD_fake = self.criterion(output_fake, fake_label)
+                errD = errD_real + errD_fake
+
+                # 生成器评估
+                errG_D = self.criterion(output_fake, real_label)
+                wtl2Matrix = self._create_weight_matrix(real_centers)
+                errG_l2 = (fake_centers - real_centers).pow(2)
+                errG_l2 = errG_l2 * wtl2Matrix
+                errG_l2 = errG_l2.mean()
+
+                val_losses['D'].append(errD.item())
+                val_losses['G_D'].append(errG_D.item())
+                val_losses['G_L2'].append(errG_l2.item())
+
+        avg_val_losses = {k: sum(v) / len(v) for k, v in val_losses.items()}
+        print(f'验证集:')
+        print(f'  平均 Val Loss_D: {avg_val_losses["D"]:.6f}')
+        print(f'  平均 Val Loss_G_D: {avg_val_losses["G_D"]:.6f}')
+        print(f'  平均 Val Loss_G_L2: {avg_val_losses["G_L2"]:.6f}')
+        print(f'{"=" * 80}\n')
+
+        self.netG.train()
+        self.netD.train()
+
+    def _test(self, epoch):
+        """在测试集上评估模型"""
+        self.netG.eval()
+        self.netD.eval()
+
+        test_losses = {'D': [], 'G_D': [], 'G_L2': []}
+
+        with torch.no_grad():
+            for corrupted_images, real_centers in self.test_loader:
+                corrupted_images = corrupted_images.to(self.device)
+                real_centers = real_centers.to(self.device)
+                batch_size = corrupted_images.size(0)
+
+                real_label = torch.full((batch_size, 1), 1.0, device=self.device)
+                fake_label = torch.full((batch_size, 1), 0.0, device=self.device)
+
+                # 判别器评估
+                output_real = self.netD(real_centers)
+                fake_centers = self.netG(corrupted_images)
+                output_fake = self.netD(fake_centers)
+
+                errD_real = self.criterion(output_real, real_label)
+                errD_fake = self.criterion(output_fake, fake_label)
+                errD = errD_real + errD_fake
+
+                # 生成器评估
+                errG_D = self.criterion(output_fake, real_label)
+                wtl2Matrix = self._create_weight_matrix(real_centers)
+                errG_l2 = (fake_centers - real_centers).pow(2)
+                errG_l2 = errG_l2 * wtl2Matrix
+                errG_l2 = errG_l2.mean()
+
+                test_losses['D'].append(errD.item())
+                test_losses['G_D'].append(errG_D.item())
+                test_losses['G_L2'].append(errG_l2.item())
+
+        avg_test_losses = {k: sum(v) / len(v) for k, v in test_losses.items()}
+        print(f'测试集:')
+        print(f'  平均 Test Loss_D: {avg_test_losses["D"]:.6f}')
+        print(f'  平均 Test Loss_G_D: {avg_test_losses["G_D"]:.6f}')
+        print(f'  平均 Test Loss_G_L2: {avg_test_losses["G_L2"]:.6f}')
+        print(f'{"=" * 80}\n')
+
+        self.netG.train()
+        self.netD.train()
+
     def _save_checkpoints(self, epoch):
         """保存模型检查点"""
+        if epoch % 10 == 0:
+            torch.save({
+                'epoch': epoch + 1,
+                'state_dict': self.netG.state_dict()
+            }, f'model/netG_epoch_{epoch}.pth')
+
+            torch.save({
+                'epoch': epoch + 1,
+                'state_dict': self.netD.state_dict()
+            }, f'model/netD_epoch_{epoch}.pth')
+
+        # 保存最终模型
         torch.save({
             'epoch': epoch + 1,
             'state_dict': self.netG.state_dict()
-        }, 'model/netG_context_encoder.pth')
+        }, 'model/netG_context_encoder_final.pth')
 
         torch.save({
             'epoch': epoch + 1,
             'state_dict': self.netD.state_dict()
-        }, 'model/netD_context_encoder.pth')
+        }, 'model/netD_context_encoder_final.pth')
 
 
 class Trainer(object):

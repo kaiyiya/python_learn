@@ -20,6 +20,7 @@ class ContextEncoderGenerator(nn.Module):
     现代化的上下文编码器生成器
     使用更现代的PyTorch写法
     """
+
     def __init__(self, opt):
         super(ContextEncoderGenerator, self).__init__()
         self.ngpu = opt.ngpu
@@ -27,40 +28,40 @@ class ContextEncoderGenerator(nn.Module):
         self.nef = opt.nef
         self.ngf = opt.ngf
         self.n_bottleneck = opt.n_bottleneck
-        
+
         # 编码器部分
         self.encoder = nn.Sequential(
             # 输入: (nc) x 128 x 128
             nn.Conv2d(self.nc, self.nef, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
             # (nef) x 64 x 64
-            
+
             nn.Conv2d(self.nef, self.nef, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.nef),
             nn.LeakyReLU(0.2, inplace=True),
             # (nef) x 32 x 32
-            
+
             nn.Conv2d(self.nef, self.nef * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.nef * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # (nef*2) x 16 x 16
-            
+
             nn.Conv2d(self.nef * 2, self.nef * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.nef * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # (nef*4) x 8 x 8
-            
+
             nn.Conv2d(self.nef * 4, self.nef * 8, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.nef * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # (nef*8) x 4 x 4
-            
+
             nn.Conv2d(self.nef * 8, self.n_bottleneck, 4, bias=False),
             nn.BatchNorm2d(self.n_bottleneck),
             nn.LeakyReLU(0.2, inplace=True),
             # (n_bottleneck) x 1 x 1
         )
-        
+
         # 解码器部分
         self.decoder = nn.Sequential(
             # 输入: (n_bottleneck) x 1 x 1
@@ -68,22 +69,22 @@ class ContextEncoderGenerator(nn.Module):
             nn.BatchNorm2d(self.ngf * 8),
             nn.ReLU(True),
             # (ngf*8) x 4 x 4
-            
+
             nn.ConvTranspose2d(self.ngf * 8, self.ngf * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.ngf * 4),
             nn.ReLU(True),
             # (ngf*4) x 8 x 8
-            
+
             nn.ConvTranspose2d(self.ngf * 4, self.ngf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.ngf * 2),
             nn.ReLU(True),
             # (ngf*2) x 16 x 16
-            
+
             nn.ConvTranspose2d(self.ngf * 2, self.ngf, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.ngf),
             nn.ReLU(True),
             # (ngf) x 32 x 32
-            
+
             nn.ConvTranspose2d(self.ngf, self.nc, 4, 2, 1, bias=False),
             nn.Tanh()
             # (nc) x 64 x 64
@@ -91,9 +92,9 @@ class ContextEncoderGenerator(nn.Module):
 
     def forward(self, input):
         if isinstance(input.data, torch.cuda.FloatTensor) and self.ngpu > 1:
-            output = nn.parallel.data_parallel(self.decoder, 
-                                             nn.parallel.data_parallel(self.encoder, input, range(self.ngpu)), 
-                                             range(self.ngpu))
+            output = nn.parallel.data_parallel(self.decoder,
+                                               nn.parallel.data_parallel(self.encoder, input, range(self.ngpu)),
+                                               range(self.ngpu))
         else:
             encoded = self.encoder(input)
             output = self.decoder(encoded)
@@ -105,33 +106,34 @@ class ContextEncoderDiscriminator(nn.Module):
     现代化的上下文编码器判别器
     用于判断修复区域是否真实
     """
+
     def __init__(self, opt):
         super(ContextEncoderDiscriminator, self).__init__()
         self.ngpu = opt.ngpu
         self.nc = opt.nc
         self.ndf = opt.ndf
-        
+
         self.main = nn.Sequential(
             # 输入: (nc) x 64 x 64
             nn.Conv2d(self.nc, self.ndf, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
             # (ndf) x 32 x 32
-            
+
             nn.Conv2d(self.ndf, self.ndf * 2, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # (ndf*2) x 16 x 16
-            
+
             nn.Conv2d(self.ndf * 2, self.ndf * 4, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # (ndf*4) x 8 x 8
-            
+
             nn.Conv2d(self.ndf * 4, self.ndf * 8, 4, 2, 1, bias=False),
             nn.BatchNorm2d(self.ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # (ndf*8) x 4 x 4
-            
+
             nn.Conv2d(self.ndf * 8, 1, 4, 1, 0, bias=False),
             nn.Sigmoid()
             # 1 x 1 x 1
@@ -201,25 +203,26 @@ if __name__ == "__main__":
             self.ngf = 64
             self.ndf = 64
             self.n_bottleneck = 4000
-    
+
+
     opt = Args()
-    
+
     # 测试生成器
     generator = ContextEncoderGenerator(opt)
     generator.apply(weights_init)
-    
+
     # 测试判别器
     discriminator = ContextEncoderDiscriminator(opt)
     discriminator.apply(weights_init)
-    
+
     # 测试前向传播
     x = torch.randn(2, 3, 128, 128)
     fake_center = torch.randn(2, 3, 64, 64)
-    
+
     print("输入图像形状:", x.shape)
     generated = generator(x)
     print("生成器输出形状:", generated.shape)
-    
+
     d_real = discriminator(fake_center)
     d_fake = discriminator(generated)
     print("判别器真实输出形状:", d_real.shape)
