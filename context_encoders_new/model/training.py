@@ -1,6 +1,7 @@
 from __future__ import division
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim as optim
 import torchvision.utils as vutils
 import os
@@ -97,10 +98,13 @@ class ContextEncoderTrainer(object):
     
     def _init_logging(self):
         """初始化日志记录"""
+        # 确保logs目录存在
+        os.makedirs("logs", exist_ok=True)
+        
         # 创建带时间戳的日志文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.log_file = f"logs/training_log_{timestamp}.txt"
-        self.json_log_file = f"logs/training_log_{timestamp}.json"
+        self.log_file = os.path.join("logs", f"training_log_{timestamp}.txt")
+        self.json_log_file = os.path.join("logs", f"training_log_{timestamp}.json")
         
         # 初始化JSON日志数据结构
         self.training_log = {
@@ -117,24 +121,38 @@ class ContextEncoderTrainer(object):
         }
         
         # 写入初始信息
-        with open(self.log_file, 'w', encoding='utf-8') as f:
-            f.write("=" * 80 + "\n")
-            f.write(f"训练日志 - 开始时间: {self.training_log['start_time']}\n")
-            f.write("=" * 80 + "\n")
-            f.write(f"配置信息:\n")
-            for key, value in self.training_log['config'].items():
-                f.write(f"  {key}: {value}\n")
-            f.write("=" * 80 + "\n\n")
-        
-        print(f"✓ 日志文件已创建: {self.log_file}")
+        try:
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                f.write("=" * 80 + "\n")
+                f.write(f"训练日志 - 开始时间: {self.training_log['start_time']}\n")
+                f.write("=" * 80 + "\n")
+                f.write(f"配置信息:\n")
+                for key, value in self.training_log['config'].items():
+                    f.write(f"  {key}: {value}\n")
+                f.write("=" * 80 + "\n\n")
+            
+            print(f"✓ 日志文件已创建: {self.log_file}")
+        except Exception as e:
+            print(f"⚠ 警告: 创建日志文件失败: {e}")
+            self.log_file = None
+            self.json_log_file = None
     
     def _log(self, message, to_console=True):
         """记录日志信息"""
+        if self.log_file is None:
+            if to_console:
+                print(message)
+            return
+            
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] {message}\n"
         
-        with open(self.log_file, 'a', encoding='utf-8') as f:
-            f.write(log_message)
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(log_message)
+        except Exception as e:
+            if to_console:
+                print(f"⚠ 警告: 写入日志失败: {e}")
         
         if to_console:
             print(message)
@@ -271,25 +289,37 @@ class ContextEncoderTrainer(object):
                 self._test(epoch)
             
             # 将当前epoch的日志添加到总日志中
-            if hasattr(self, 'current_epoch_log'):
+            if hasattr(self, 'current_epoch_log') and self.json_log_file:
                 self.training_log['epochs'].append(self.current_epoch_log.copy())
                 # 保存JSON日志（每个epoch都保存，方便随时查看）
-                with open(self.json_log_file, 'w', encoding='utf-8') as f:
-                    json.dump(self.training_log, f, indent=2, ensure_ascii=False)
+                try:
+                    with open(self.json_log_file, 'w', encoding='utf-8') as f:
+                        json.dump(self.training_log, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    print(f"⚠ 警告: 保存JSON日志失败: {e}")
 
             # 保存模型检查点
             self._save_checkpoints(epoch)
 
     def _save_sample_images(self, epoch, corrupted_images, real_centers, fake_centers):
         """保存样本图像"""
-        # 保存真实图像
-        vutils.save_image(real_centers,
-                          f'result/train/real/real_samples_epoch_{epoch:03d}.png',
-                          normalize=True, nrow=4)
-
-        # 保存损坏图像
+        # 保存损坏图像（完整尺寸）
         vutils.save_image(corrupted_images,
                           f'result/train/cropped/cropped_samples_epoch_{epoch:03d}.png',
+                          normalize=True, nrow=4)
+
+        # 将真实中心区域放大到完整图像尺寸，用于保存
+        # 使用双线性插值将中心区域放大2倍
+        real_centers_upsampled = F.interpolate(
+            real_centers, 
+            size=(self.opt.image_size, self.opt.image_size),
+            mode='bilinear', 
+            align_corners=False
+        )
+        
+        # 保存真实图像（放大后的中心区域，完整尺寸）
+        vutils.save_image(real_centers_upsampled,
+                          f'result/train/real/real_samples_epoch_{epoch:03d}.png',
                           normalize=True, nrow=4)
 
         # 保存重建图像
@@ -463,17 +493,31 @@ class ContextEncoderTrainer(object):
             nrow=nrow
         )
         
-        # 保存真实中心区域大图
+        # 将中心区域放大到完整图像尺寸
+        real_centers_upsampled = F.interpolate(
+            real_centers, 
+            size=(self.opt.image_size, self.opt.image_size),
+            mode='bilinear', 
+            align_corners=False
+        )
+        fake_centers_upsampled = F.interpolate(
+            fake_centers, 
+            size=(self.opt.image_size, self.opt.image_size),
+            mode='bilinear', 
+            align_corners=False
+        )
+        
+        # 保存真实中心区域大图（放大后，完整尺寸）
         vutils.save_image(
-            real_centers,
+            real_centers_upsampled,
             f'result/test/real_centers_epoch_{epoch:03d}.png',
             normalize=True,
             nrow=nrow
         )
         
-        # 保存生成的中心区域大图
+        # 保存生成的中心区域大图（放大后，完整尺寸）
         vutils.save_image(
-            fake_centers,
+            fake_centers_upsampled,
             f'result/test/fake_centers_epoch_{epoch:03d}.png',
             normalize=True,
             nrow=nrow
@@ -487,17 +531,31 @@ class ContextEncoderTrainer(object):
             nrow=nrow
         )
         
-        # 保存对比图：每行显示 [损坏图像 | 真实中心 | 生成中心 | 重建图像]
+        # 保存对比图：每行显示 [损坏图像 | 真实中心(放大) | 生成中心(放大) | 重建图像]
         # 只保存前16个样本的对比图（如果样本数少于16，则全部保存）
         num_compare = min(16, num_images)
         compare_images = []
         
+        # 将中心区域放大到完整图像尺寸
+        real_centers_upsampled = F.interpolate(
+            real_centers, 
+            size=(self.opt.image_size, self.opt.image_size),
+            mode='bilinear', 
+            align_corners=False
+        )
+        fake_centers_upsampled = F.interpolate(
+            fake_centers, 
+            size=(self.opt.image_size, self.opt.image_size),
+            mode='bilinear', 
+            align_corners=False
+        )
+        
         for i in range(num_compare):
-            # 创建一行对比图：损坏图像 | 真实中心 | 生成中心 | 重建图像
+            # 创建一行对比图：损坏图像 | 真实中心(放大) | 生成中心(放大) | 重建图像
             row = torch.cat([
                 corrupted_images[i:i+1],
-                real_centers[i:i+1],
-                fake_centers[i:i+1],
+                real_centers_upsampled[i:i+1],
+                fake_centers_upsampled[i:i+1],
                 recon_images[i:i+1]
             ], dim=3)  # 在宽度维度拼接
             compare_images.append(row)
@@ -540,16 +598,22 @@ class ContextEncoderTrainer(object):
         # 训练结束，保存最终日志
         if epoch == self.epochs - 1:
             self.training_log["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            with open(self.json_log_file, 'w', encoding='utf-8') as f:
-                json.dump(self.training_log, f, indent=2, ensure_ascii=False)
+            if self.json_log_file:
+                try:
+                    with open(self.json_log_file, 'w', encoding='utf-8') as f:
+                        json.dump(self.training_log, f, indent=2, ensure_ascii=False)
+                except Exception as e:
+                    print(f"⚠ 警告: 保存JSON日志失败: {e}")
             
             final_log = (f'\n{"=" * 80}\n'
                         f'训练完成！\n'
                         f'开始时间: {self.training_log["start_time"]}\n'
-                        f'结束时间: {self.training_log["end_time"]}\n'
-                        f'日志文件: {self.log_file}\n'
-                        f'JSON日志: {self.json_log_file}\n'
-                        f'{"=" * 80}\n')
+                        f'结束时间: {self.training_log["end_time"]}\n')
+            if self.log_file:
+                final_log += f'日志文件: {self.log_file}\n'
+            if self.json_log_file:
+                final_log += f'JSON日志: {self.json_log_file}\n'
+            final_log += f'{"=" * 80}\n'
             self._log(final_log)
 
 
