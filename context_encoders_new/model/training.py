@@ -4,6 +4,8 @@ import torch.nn as nn
 import torch.optim as optim
 import torchvision.utils as vutils
 import os
+from datetime import datetime
+import json
 
 
 class ContextEncoderTrainer(object):
@@ -41,6 +43,9 @@ class ContextEncoderTrainer(object):
 
         # 创建输出目录
         self._create_directories()
+        
+        # 初始化日志记录
+        self._init_logging()
 
         print(f"训练器初始化完成，使用设备: {self.device}")
         print(f"生成器参数数量: {sum(p.numel() for p in self.netG.parameters())}")
@@ -79,6 +84,8 @@ class ContextEncoderTrainer(object):
             "result/train/cropped",
             "result/train/real",
             "result/train/recon",
+            "result/test",
+            "logs",
             "model"
         ]
 
@@ -87,6 +94,50 @@ class ContextEncoderTrainer(object):
                 os.makedirs(directory, exist_ok=True)
             except OSError:
                 pass
+    
+    def _init_logging(self):
+        """初始化日志记录"""
+        # 创建带时间戳的日志文件名
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.log_file = f"logs/training_log_{timestamp}.txt"
+        self.json_log_file = f"logs/training_log_{timestamp}.json"
+        
+        # 初始化JSON日志数据结构
+        self.training_log = {
+            "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "config": {
+                "epochs": self.epochs,
+                "batch_size": self.opt.batch_size,
+                "learning_rate": self.opt.lr,
+                "wtl2": self.wtl2,
+                "image_size": self.opt.image_size,
+                "device": str(self.device)
+            },
+            "epochs": []
+        }
+        
+        # 写入初始信息
+        with open(self.log_file, 'w', encoding='utf-8') as f:
+            f.write("=" * 80 + "\n")
+            f.write(f"训练日志 - 开始时间: {self.training_log['start_time']}\n")
+            f.write("=" * 80 + "\n")
+            f.write(f"配置信息:\n")
+            for key, value in self.training_log['config'].items():
+                f.write(f"  {key}: {value}\n")
+            f.write("=" * 80 + "\n\n")
+        
+        print(f"✓ 日志文件已创建: {self.log_file}")
+    
+    def _log(self, message, to_console=True):
+        """记录日志信息"""
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_message = f"[{timestamp}] {message}\n"
+        
+        with open(self.log_file, 'a', encoding='utf-8') as f:
+            f.write(log_message)
+        
+        if to_console:
+            print(message)
 
     def _create_weight_matrix(self, real_center):
         """
@@ -106,8 +157,8 @@ class ContextEncoderTrainer(object):
 
     def train_model(self):
         """主训练循环"""
-        print(f'开始训练，共 {self.epochs} 个epoch')
-        print('=' * 80)
+        log_msg = f'开始训练，共 {self.epochs} 个epoch\n{"=" * 80}'
+        self._log(log_msg)
 
         for epoch in range(self.resume_epoch, self.epochs):
             self.netG.train()
@@ -178,10 +229,11 @@ class ContextEncoderTrainer(object):
 
                 # 打印训练信息
                 if i % 100 == 0:
-                    print(f'[{epoch}/{self.epochs}][{i}/{len(self.train_loader)}] '
-                          f'Loss_D: {errD.item():.4f} '
-                          f'Loss_G: {errG_D.item():.4f}/{errG_l2.item():.4f} '
-                          f'D(x): {D_x:.4f} D(G(z)): {D_G_z1:.4f}/{D_G_z2:.4f}')
+                    log_msg = (f'[{epoch}/{self.epochs}][{i}/{len(self.train_loader)}] '
+                              f'Loss_D: {errD.item():.4f} '
+                              f'Loss_G: {errG_D.item():.4f}/{errG_l2.item():.4f} '
+                              f'D(x): {D_x:.4f} D(G(z)): {D_G_z1:.4f}/{D_G_z2:.4f}')
+                    self._log(log_msg)
 
                 # 保存样本图像
                 if i % 100 == 0:
@@ -189,12 +241,24 @@ class ContextEncoderTrainer(object):
 
             # 打印epoch统计信息
             avg_losses = {k: sum(v) / len(v) for k, v in epoch_losses.items()}
-            print(f'\n{"=" * 80}')
-            print(f'Epoch [{epoch}/{self.epochs}] 总结:')
-            print(f'  平均 Loss_D: {avg_losses["D"]:.6f}')
-            print(f'  平均 Loss_G_D: {avg_losses["G_D"]:.6f}')
-            print(f'  平均 Loss_G_L2: {avg_losses["G_L2"]:.6f}')
-            print(f'{"=" * 80}')
+            
+            # 创建当前epoch的日志记录
+            self.current_epoch_log = {
+                "epoch": epoch,
+                "train": {
+                    "Loss_D": avg_losses["D"],
+                    "Loss_G_D": avg_losses["G_D"],
+                    "Loss_G_L2": avg_losses["G_L2"]
+                }
+            }
+            
+            log_msg = (f'\n{"=" * 80}\n'
+                      f'Epoch [{epoch}/{self.epochs}] 总结:\n'
+                      f'  平均 Loss_D: {avg_losses["D"]:.6f}\n'
+                      f'  平均 Loss_G_D: {avg_losses["G_D"]:.6f}\n'
+                      f'  平均 Loss_G_L2: {avg_losses["G_L2"]:.6f}\n'
+                      f'{"=" * 80}')
+            self._log(log_msg)
 
             # 验证集评估
             if self.val_loader is not None:
@@ -205,6 +269,13 @@ class ContextEncoderTrainer(object):
                 # 可以选择每个epoch都测试，或者只在特定epoch测试
                 # 这里设置为每个epoch都测试，你也可以改为 epoch % 5 == 0 等
                 self._test(epoch)
+            
+            # 将当前epoch的日志添加到总日志中
+            if hasattr(self, 'current_epoch_log'):
+                self.training_log['epochs'].append(self.current_epoch_log.copy())
+                # 保存JSON日志（每个epoch都保存，方便随时查看）
+                with open(self.json_log_file, 'w', encoding='utf-8') as f:
+                    json.dump(self.training_log, f, indent=2, ensure_ascii=False)
 
             # 保存模型检查点
             self._save_checkpoints(epoch)
@@ -271,11 +342,20 @@ class ContextEncoderTrainer(object):
                 val_losses['G_L2'].append(errG_l2.item())
 
         avg_val_losses = {k: sum(v) / len(v) for k, v in val_losses.items()}
-        print(f'验证集:')
-        print(f'  平均 Val Loss_D: {avg_val_losses["D"]:.6f}')
-        print(f'  平均 Val Loss_G_D: {avg_val_losses["G_D"]:.6f}')
-        print(f'  平均 Val Loss_G_L2: {avg_val_losses["G_L2"]:.6f}')
-        print(f'{"=" * 80}\n')
+        log_msg = (f'验证集:\n'
+                  f'  平均 Val Loss_D: {avg_val_losses["D"]:.6f}\n'
+                  f'  平均 Val Loss_G_D: {avg_val_losses["G_D"]:.6f}\n'
+                  f'  平均 Val Loss_G_L2: {avg_val_losses["G_L2"]:.6f}\n'
+                  f'{"=" * 80}\n')
+        self._log(log_msg)
+        
+        # 更新JSON日志
+        if hasattr(self, 'current_epoch_log'):
+            self.current_epoch_log["val"] = {
+                "Loss_D": avg_val_losses["D"],
+                "Loss_G_D": avg_val_losses["G_D"],
+                "Loss_G_L2": avg_val_losses["G_L2"]
+            }
 
         self.netG.train()
         self.netD.train()
@@ -286,6 +366,12 @@ class ContextEncoderTrainer(object):
         self.netD.eval()
 
         test_losses = {'D': [], 'G_D': [], 'G_L2': []}
+        
+        # 收集所有测试图片用于生成大图
+        all_corrupted = []
+        all_real_centers = []
+        all_fake_centers = []
+        all_recon_images = []
 
         with torch.no_grad():
             for corrupted_images, real_centers in self.test_loader:
@@ -315,16 +401,117 @@ class ContextEncoderTrainer(object):
                 test_losses['D'].append(errD.item())
                 test_losses['G_D'].append(errG_D.item())
                 test_losses['G_L2'].append(errG_l2.item())
+                
+                # 收集图片用于生成大图
+                all_corrupted.append(corrupted_images.cpu())
+                all_real_centers.append(real_centers.cpu())
+                all_fake_centers.append(fake_centers.cpu())
+                
+                # 创建重建图像（将生成的中心区域放回损坏图像中）
+                recon_images = corrupted_images.clone()
+                center_size = self.opt.image_size // 2
+                center_start = self.opt.image_size // 4
+                recon_images[:, :,
+                    center_start:center_start + center_size,
+                    center_start:center_start + center_size] = fake_centers
+                all_recon_images.append(recon_images.cpu())
+
+        # 合并所有批次
+        all_corrupted = torch.cat(all_corrupted, dim=0)
+        all_real_centers = torch.cat(all_real_centers, dim=0)
+        all_fake_centers = torch.cat(all_fake_centers, dim=0)
+        all_recon_images = torch.cat(all_recon_images, dim=0)
+        
+        # 生成测试结果大图
+        self._save_test_montage(all_corrupted, all_real_centers, all_fake_centers, 
+                                all_recon_images, epoch)
 
         avg_test_losses = {k: sum(v) / len(v) for k, v in test_losses.items()}
-        print(f'测试集:')
-        print(f'  平均 Test Loss_D: {avg_test_losses["D"]:.6f}')
-        print(f'  平均 Test Loss_G_D: {avg_test_losses["G_D"]:.6f}')
-        print(f'  平均 Test Loss_G_L2: {avg_test_losses["G_L2"]:.6f}')
-        print(f'{"=" * 80}\n')
+        log_msg = (f'测试集:\n'
+                  f'  平均 Test Loss_D: {avg_test_losses["D"]:.6f}\n'
+                  f'  平均 Test Loss_G_D: {avg_test_losses["G_D"]:.6f}\n'
+                  f'  平均 Test Loss_G_L2: {avg_test_losses["G_L2"]:.6f}\n'
+                  f'{"=" * 80}\n')
+        self._log(log_msg)
+        
+        # 更新JSON日志
+        if hasattr(self, 'current_epoch_log'):
+            self.current_epoch_log["test"] = {
+                "Loss_D": avg_test_losses["D"],
+                "Loss_G_D": avg_test_losses["G_D"],
+                "Loss_G_L2": avg_test_losses["G_L2"]
+            }
 
         self.netG.train()
         self.netD.train()
+    
+    def _save_test_montage(self, corrupted_images, real_centers, fake_centers, 
+                          recon_images, epoch):
+        """保存测试集所有图片排列成的大图"""
+        num_images = corrupted_images.size(0)
+        
+        # 计算网格大小（尽量接近正方形）
+        nrow = int(num_images ** 0.5) + 1
+        if nrow * (nrow - 1) >= num_images:
+            nrow = nrow - 1
+        
+        # 保存损坏图像大图
+        vutils.save_image(
+            corrupted_images,
+            f'result/test/corrupted_epoch_{epoch:03d}.png',
+            normalize=True,
+            nrow=nrow
+        )
+        
+        # 保存真实中心区域大图
+        vutils.save_image(
+            real_centers,
+            f'result/test/real_centers_epoch_{epoch:03d}.png',
+            normalize=True,
+            nrow=nrow
+        )
+        
+        # 保存生成的中心区域大图
+        vutils.save_image(
+            fake_centers,
+            f'result/test/fake_centers_epoch_{epoch:03d}.png',
+            normalize=True,
+            nrow=nrow
+        )
+        
+        # 保存重建图像大图（最重要的结果）
+        vutils.save_image(
+            recon_images,
+            f'result/test/reconstructed_epoch_{epoch:03d}.png',
+            normalize=True,
+            nrow=nrow
+        )
+        
+        # 保存对比图：每行显示 [损坏图像 | 真实中心 | 生成中心 | 重建图像]
+        # 只保存前16个样本的对比图（如果样本数少于16，则全部保存）
+        num_compare = min(16, num_images)
+        compare_images = []
+        
+        for i in range(num_compare):
+            # 创建一行对比图：损坏图像 | 真实中心 | 生成中心 | 重建图像
+            row = torch.cat([
+                corrupted_images[i:i+1],
+                real_centers[i:i+1],
+                fake_centers[i:i+1],
+                recon_images[i:i+1]
+            ], dim=3)  # 在宽度维度拼接
+            compare_images.append(row)
+        
+        if compare_images:
+            compare_grid = torch.cat(compare_images, dim=0)
+            vutils.save_image(
+                compare_grid,
+                f'result/test/comparison_epoch_{epoch:03d}.png',
+                normalize=True,
+                nrow=1  # 每行一个样本的对比
+            )
+        
+        self._log(f'✓ 测试集图片已保存到 result/test/ (共 {num_images} 个样本)', to_console=False)
 
     def _save_checkpoints(self, epoch):
         """保存模型检查点"""
@@ -349,6 +536,21 @@ class ContextEncoderTrainer(object):
             'epoch': epoch + 1,
             'state_dict': self.netD.state_dict()
         }, 'model/netD_context_encoder_final.pth')
+        
+        # 训练结束，保存最终日志
+        if epoch == self.epochs - 1:
+            self.training_log["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            with open(self.json_log_file, 'w', encoding='utf-8') as f:
+                json.dump(self.training_log, f, indent=2, ensure_ascii=False)
+            
+            final_log = (f'\n{"=" * 80}\n'
+                        f'训练完成！\n'
+                        f'开始时间: {self.training_log["start_time"]}\n'
+                        f'结束时间: {self.training_log["end_time"]}\n'
+                        f'日志文件: {self.log_file}\n'
+                        f'JSON日志: {self.json_log_file}\n'
+                        f'{"=" * 80}\n')
+            self._log(final_log)
 
 
 class Trainer(object):
