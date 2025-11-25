@@ -16,7 +16,13 @@ def config_parser():
     # 默认是街景数据集
     parser.add_argument('--dataset', default='streetview', help='dataset type: streetview | imagenet | folder')
     # 设置数据集的根目录
-    parser.add_argument('--dataroot', default='data/train', help='path to dataset')
+    parser.add_argument('--dataroot', default='data/train', help='path to dataset (legacy fallback)')
+    parser.add_argument('--train_dir', default='', help='path to training dataset (overrides dataroot)')
+    parser.add_argument('--val_dir', default='', help='path to validation dataset')
+    parser.add_argument('--test_dir', default='', help='path to test dataset')
+    parser.add_argument('--train_ratio', type=float, default=0.7, help='train split ratio when no val/test dir')
+    parser.add_argument('--val_ratio', type=float, default=0.15, help='val split ratio when no val dir')
+    parser.add_argument('--test_ratio', type=float, default=0.15, help='test split ratio when no test dir')
     # 设置数据加载的进程数
     parser.add_argument('--workers', type=int, default=2, help='number of data loading workers')
 

@@ -34,11 +34,12 @@ class ContextEncoderDataset(Dataset):
     上下文编码器数据集类
     用于图像修复任务，支持多种数据集格式
     """
-    def __init__(self, opt, is_train=True):
+    def __init__(self, opt, is_train=True, dataroot=None):
         self.opt = opt
         self.is_train = is_train
         self.image_size = opt.image_size
         self.overlap_pred = opt.overlap_pred
+        self.dataroot = dataroot or opt.dataroot
         
         # 根据数据集类型加载数据
         if opt.dataset in ['imagenet', 'folder', 'streetview']:
@@ -50,9 +51,9 @@ class ContextEncoderDataset(Dataset):
         
         # 验证数据集
         if len(self.dataset) == 0:
-            raise RuntimeError(f"数据集为空！请检查数据路径: {opt.dataroot}")
+            raise RuntimeError(f"数据集为空！请检查数据路径: {self.dataroot}")
         
-        print(f"✓ 数据集加载成功: {len(self.dataset)} 个样本")
+        print(f"✓ 数据集加载成功: {len(self.dataset)} 个样本，来源: {self.dataroot}")
     
     def _load_folder_dataset(self):
         """加载文件夹格式的数据集"""
@@ -63,7 +64,7 @@ class ContextEncoderDataset(Dataset):
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
         ])
         
-        dataroot = self.opt.dataroot
+        dataroot = self.dataroot
         
         # 支持的图片格式
         valid_extensions = ('.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif')
@@ -109,7 +110,7 @@ class ContextEncoderDataset(Dataset):
         ])
         
         return torchvision.datasets.CIFAR10(
-            root=self.opt.dataroot,
+            root=self.dataroot,
             download=True,
             transform=transform
         )
