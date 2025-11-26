@@ -3,6 +3,8 @@ import torch  # 导入PyTorch库，用于张量计算和深度学习
 import time  # 导入time模块，用来计时每个epoch或step的耗时
 import numpy as np  # 导入NumPy，用于数值计算，比如求均值
 import os  # 导入os模块，负责文件夹创建等操作
+import json  # 导入json模块，用于保存训练日志
+from datetime import datetime  # 导入datetime，用于生成时间戳
 import matplotlib.pyplot as plt  # 导入Matplotlib的绘图工具，用于保存预测与真值的可视化图像
 
 
@@ -19,6 +21,10 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
         self.model.to(device)  # 将模型移动到指定的device，比如GPU，加速训练
         self.pos_weight = torch.tensor(16.0, device=self.device)  # 定义正样本权重pos_weight=16，在前景稀少时加大正例损失权
         self.pos_weight = torch.clamp(self.pos_weight, max=50.0)  # 对pos_weight做上限限制，避免权重过大导致训练不稳定
+        self.log_file = None  # 训练日志txt文件路径
+        self.json_log_file = None  # 训练日志json文件路径
+        self.training_log = None  # 训练日志内容
+        self._init_logging()  # 初始化日志记录资源
 
     def calculate_iou(self, pred, target, threshold=0.5):  # 定义IoU计算函数，用于评估分割结果
         """计算IoU (Intersection over Union)，示例：预测图与真值图重叠区域面积/并集面积"""  # 文档字符串说明含义，并给出直观示例
@@ -73,8 +79,10 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
         return total_norm  # 返回梯度大小，可用于监控训练是否稳定
 
     def train_model(self):  # 定义主训练函数
-        print(f'开始训练，共 {self.epochs} 个epoch')  # 打印训练开始信息，提示总轮数，例如200轮
+        start_msg = f'开始训练，共 {self.epochs} 个epoch'  # 打印训练开始信息，提示总轮数，例如200轮
+        print(start_msg)
         print('=' * 80)  # 打印分割线，便于日志阅读
+        self._log(start_msg)
 
         for epoch in range(self.epochs):  # 遍历每个epoch，range(200)即0~199共200轮
             epoch_start_time = time.time()  # 记录本轮开始时间，用于统计耗时
@@ -173,17 +181,35 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
             total_samples = len(self.train_loader.dataset)  # 训练集中样本总数，示例：1000张图
             epoch_speed = total_samples / epoch_time if epoch_time > 0 else 0  # 计算每秒处理样本数，衡量整体训练速度
 
-            print(f'\n{"=" * 80}')  # 打印分隔线，区分不同epoch
-            print(f'Epoch {epoch}/{self.epochs} 总结:')  # 输出当前epoch编号
-            print(f'  平均 Loss: {avg_loss:.6f}')  # 打印平均损失
-            print(f'  平均 IoU: {avg_iou:.4f}')  # 打印平均IoU
-            print(f'  平均 Dice: {avg_dice:.4f}')  # 打印平均Dice
-            print(f'  平均准确率: {avg_accuracy:.4f}')  # 打印平均准确率
-            print(f'  平均 MAE: {avg_mae:.6f}')  # 打印平均MAE
-            print(f'  平均梯度范数: {avg_grad_norm:.4f}')  # 打印平均梯度范数
-            print(f'  当前学习率: {self.optimizer.param_groups[0]["lr"]:.6f}')  # 打印当前学习率，确认是否有调度
-            print(f'  训练时间: {epoch_time:.2f}s | 训练速度: {epoch_speed:.2f} samples/sec')  # 打印每轮耗时和速度
-            print(f'{"=" * 80}')  # 再次打印分隔线，保持日志整洁
+            summary_lines = [
+                "",
+                "=" * 80,
+                f'Epoch {epoch}/{self.epochs} 总结:',
+                f'  平均 Loss: {avg_loss:.6f}',
+                f'  平均 IoU: {avg_iou:.4f}',
+                f'  平均 Dice: {avg_dice:.4f}',
+                f'  平均准确率: {avg_accuracy:.4f}',
+                f'  平均 MAE: {avg_mae:.6f}',
+                f'  平均梯度范数: {avg_grad_norm:.4f}',
+                f'  当前学习率: {self.optimizer.param_groups[0]["lr"]:.6f}',
+                f'  训练时间: {epoch_time:.2f}s | 训练速度: {epoch_speed:.2f} samples/sec',
+                "=" * 80
+            ]
+            summary_text = "\n".join(summary_lines)
+            print(summary_text)
+            self._log(summary_text)
+
+            train_metrics = {
+                "loss": float(avg_loss),
+                "iou": float(avg_iou),
+                "dice": float(avg_dice),
+                "accuracy": float(avg_accuracy),
+                "mae": float(avg_mae),
+                "grad_norm": float(avg_grad_norm),
+                "lr": float(self.optimizer.param_groups[0]["lr"])
+            }
+
+            val_metrics_dict = None
 
             try:  # 使用try避免可视化过程中出现错误导致训练中断
                 os.makedirs('PredvsGT', exist_ok=True)  # 创建保存图片的文件夹PredvsGT，若已存在则忽略
@@ -280,19 +306,129 @@ class Trainer(object):  # 定义Trainer类，用来封装训练全过程
                         val_accuracies.append(self.calculate_accuracy(probs, mask, threshold=thr).item())  # 记录准确率
                         val_maes.append(self.calculate_mae(probs, mask).item())  # 记录MAE
 
-                print(f'验证集:')  # 打印验证结果开头
-                print(f'  平均 Val Loss: {np.mean(val_losses):.6f}')  # 打印验证集平均损失
-                print(f'  平均 Val IoU: {np.mean(val_ious):.4f}')  # 打印验证集平均IoU
-                print(f'  平均 Val Dice: {np.mean(val_dices):.4f}')  # 打印验证集平均Dice
-                print(f'  平均 Val Acc: {np.mean(val_accuracies):.4f}')  # 打印验证集平均准确率
-                print(f'  平均 Val MAE: {np.mean(val_maes):.6f}')  # 打印验证集平均MAE
-                print(f'{"=" * 80}\n')  # 打印分隔线并换行
+                val_loss_mean = float(np.mean(val_losses))
+                val_iou_mean = float(np.mean(val_ious))
+                val_dice_mean = float(np.mean(val_dices))
+                val_acc_mean = float(np.mean(val_accuracies))
+                val_mae_mean = float(np.mean(val_maes))
+                val_text_lines = [
+                    '验证集:',
+                    f'  平均 Val Loss: {val_loss_mean:.6f}',
+                    f'  平均 Val IoU: {val_iou_mean:.4f}',
+                    f'  平均 Val Dice: {val_dice_mean:.4f}',
+                    f'  平均 Val Acc: {val_acc_mean:.4f}',
+                    f'  平均 Val MAE: {val_mae_mean:.6f}',
+                    "=" * 80,
+                    ""
+                ]
+                val_text = "\n".join(val_text_lines)
+                print(val_text)
+                self._log(val_text)
+
+                val_metrics_dict = {
+                    "loss": val_loss_mean,
+                    "iou": val_iou_mean,
+                    "dice": val_dice_mean,
+                    "accuracy": val_acc_mean,
+                    "mae": val_mae_mean
+                }
             else:  # 如果没有验证集
                 print()  # 打印空行，以保持输出格式一致
 
+            self._record_epoch_metrics(epoch, train_metrics, val_metrics_dict)
+
             if epoch % 10 == 0:  # 每10个epoch保存一次模型
                 torch.save(self.model.state_dict(), f'unet-{epoch}.pth')  # 保存当前模型参数到文件，例如unet-010.pth
-                print(f'✓ 模型已保存: unet-{epoch}.pth\n')  # 提示保存成功，方便回滚特定阶段
+                save_msg = f'✓ 模型已保存: unet-{epoch}.pth'
+                print(f'{save_msg}\n')  # 提示保存成功，方便回滚特定阶段
+                self._log(save_msg)
 
         torch.save(self.model.state_dict(), f'Unet-epochs{self.epochs}.pth')  # 所有训练结束后再保存一次最终权重
-        print(f'\n训练完成！最终模型已保存: Unet-epochs{self.epochs}.pth')  # 打印训练完成提示，告知模型存放位置
+        final_msg = f'\n训练完成！最终模型已保存: Unet-epochs{self.epochs}.pth'
+        print(final_msg)  # 打印训练完成提示，告知模型存放位置
+        self._log(final_msg)
+        self._finalize_logging()
+
+    def _init_logging(self):
+        """初始化训练日志文件（txt + json）"""
+        try:
+            os.makedirs('logs', exist_ok=True)
+        except OSError:
+            pass
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.log_file = os.path.join('logs', f'seg_training_log_{timestamp}.txt')
+        self.json_log_file = os.path.join('logs', f'seg_training_log_{timestamp}.json')
+        self.training_log = {
+            "start_time": start_time,
+            "config": {
+                "epochs": self.epochs,
+                "batch_size": getattr(self.args, 'batch_size', None),
+                "learning_rate": float(self.optimizer.param_groups[0]['lr']),
+                "pos_weight": float(self.pos_weight.item()),
+                "device": str(self.device)
+            },
+            "epochs": []
+        }
+
+        header_lines = [
+            "=" * 80,
+            f"语义分割训练日志 - 开始时间: {start_time}",
+            "=" * 80,
+            "配置信息:"
+        ]
+        for key, value in self.training_log["config"].items():
+            header_lines.append(f"  {key}: {value}")
+        header_lines.append("=" * 80)
+        header_text = "\n".join(header_lines) + "\n"
+
+        try:
+            with open(self.log_file, 'w', encoding='utf-8') as f:
+                f.write(header_text)
+        except OSError as exc:
+            print(f'日志文件创建失败: {exc}')
+            self.log_file = None
+            self.json_log_file = None
+            self.training_log = None
+
+    def _log(self, message):
+        """写入txt日志"""
+        if not self.log_file:
+            return
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            with open(self.log_file, 'a', encoding='utf-8') as f:
+                f.write(f"[{timestamp}] {message}\n")
+        except OSError as exc:
+            print(f'写入日志失败: {exc}')
+
+    def _write_json_log(self):
+        """将训练日志写入JSON文件"""
+        if not self.json_log_file or self.training_log is None:
+            return
+        try:
+            with open(self.json_log_file, 'w', encoding='utf-8') as f:
+                json.dump(self.training_log, f, indent=2, ensure_ascii=False)
+        except OSError as exc:
+            print(f'写入JSON日志失败: {exc}')
+
+    def _record_epoch_metrics(self, epoch, train_metrics, val_metrics=None):
+        """记录每个epoch的统计信息"""
+        if self.training_log is None:
+            return
+        entry = {
+            "epoch": int(epoch),
+            "train": train_metrics
+        }
+        if val_metrics is not None:
+            entry["val"] = val_metrics
+        self.training_log["epochs"].append(entry)
+        self._write_json_log()
+
+    def _finalize_logging(self):
+        """训练结束后写入结束时间"""
+        if self.training_log is None:
+            return
+        self.training_log["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._write_json_log()

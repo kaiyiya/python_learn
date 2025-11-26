@@ -573,3 +573,4 @@
 /.venv/Lib/site-packages/pip/_internal/network/xmlrpc.py
 *.pth
 .idea
+.log
