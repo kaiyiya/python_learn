@@ -7,6 +7,9 @@ import torchvision.utils as vutils
 import os
 from datetime import datetime
 import json
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from metrics import calculate_batch_metrics, denormalize_tensor
 
 
 class ContextEncoderTrainer(object):
@@ -44,7 +47,7 @@ class ContextEncoderTrainer(object):
 
         # 创建输出目录
         self._create_directories()
-        
+
         # 初始化日志记录
         self._init_logging()
 
@@ -52,6 +55,7 @@ class ContextEncoderTrainer(object):
         print(f"生成器参数数量: {sum(p.numel() for p in self.netG.parameters())}")
         print(f"判别器参数数量: {sum(p.numel() for p in self.netD.parameters())}")
 
+    # 类似于"断点续传"
     def _load_checkpoints(self):
         """加载检查点"""
         self.resume_epoch = 0
@@ -95,17 +99,17 @@ class ContextEncoderTrainer(object):
                 os.makedirs(directory, exist_ok=True)
             except OSError:
                 pass
-    
+
     def _init_logging(self):
         """初始化日志记录"""
         # 确保logs目录存在
         os.makedirs("logs", exist_ok=True)
-        
+
         # 创建带时间戳的日志文件名
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.log_file = os.path.join("logs", f"training_log_{timestamp}.txt")
         self.json_log_file = os.path.join("logs", f"training_log_{timestamp}.json")
-        
+
         # 初始化JSON日志数据结构
         self.training_log = {
             "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -119,7 +123,7 @@ class ContextEncoderTrainer(object):
             },
             "epochs": []
         }
-        
+
         # 写入初始信息
         try:
             with open(self.log_file, 'w', encoding='utf-8') as f:
@@ -130,30 +134,30 @@ class ContextEncoderTrainer(object):
                 for key, value in self.training_log['config'].items():
                     f.write(f"  {key}: {value}\n")
                 f.write("=" * 80 + "\n\n")
-            
+
             print(f"✓ 日志文件已创建: {self.log_file}")
         except Exception as e:
             print(f"⚠ 警告: 创建日志文件失败: {e}")
             self.log_file = None
             self.json_log_file = None
-    
+
     def _log(self, message, to_console=True):
         """记录日志信息"""
         if self.log_file is None:
             if to_console:
                 print(message)
             return
-            
+
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"[{timestamp}] {message}\n"
-        
+
         try:
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(log_message)
         except Exception as e:
             if to_console:
                 print(f"⚠ 警告: 写入日志失败: {e}")
-        
+
         if to_console:
             print(message)
 
@@ -199,7 +203,7 @@ class ContextEncoderTrainer(object):
                 self.netD.zero_grad()
 
                 # 训练判别器识别真实图像
-                output_real = self.netD(real_centers)  # 清除判别器网络的所有参数梯度
+                output_real = self.netD(real_centers)
                 # 调试信息：打印形状
                 if i == 0 and epoch == 0:
                     print(f"Debug - output_real shape: {output_real.shape}")
@@ -248,9 +252,9 @@ class ContextEncoderTrainer(object):
                 # 打印训练信息
                 if i % 100 == 0:
                     log_msg = (f'[{epoch}/{self.epochs}][{i}/{len(self.train_loader)}] '
-                              f'Loss_D: {errD.item():.4f} '
-                              f'Loss_G: {errG_D.item():.4f}/{errG_l2.item():.4f} '
-                              f'D(x): {D_x:.4f} D(G(z)): {D_G_z1:.4f}/{D_G_z2:.4f}')
+                               f'Loss_D: {errD.item():.4f} '
+                               f'Loss_G: {errG_D.item():.4f}/{errG_l2.item():.4f} '
+                               f'D(x): {D_x:.4f} D(G(z)): {D_G_z1:.4f}/{D_G_z2:.4f}')
                     self._log(log_msg)
 
                 # 保存样本图像
@@ -259,7 +263,7 @@ class ContextEncoderTrainer(object):
 
             # 打印epoch统计信息
             avg_losses = {k: sum(v) / len(v) for k, v in epoch_losses.items()}
-            
+
             # 创建当前epoch的日志记录
             self.current_epoch_log = {
                 "epoch": epoch,
@@ -269,13 +273,13 @@ class ContextEncoderTrainer(object):
                     "Loss_G_L2": avg_losses["G_L2"]
                 }
             }
-            
+
             log_msg = (f'\n{"=" * 80}\n'
-                      f'Epoch [{epoch}/{self.epochs}] 总结:\n'
-                      f'  平均 Loss_D: {avg_losses["D"]:.6f}\n'
-                      f'  平均 Loss_G_D: {avg_losses["G_D"]:.6f}\n'
-                      f'  平均 Loss_G_L2: {avg_losses["G_L2"]:.6f}\n'
-                      f'{"=" * 80}')
+                       f'Epoch [{epoch}/{self.epochs}] 总结:\n'
+                       f'  平均 Loss_D: {avg_losses["D"]:.6f}\n'
+                       f'  平均 Loss_G_D: {avg_losses["G_D"]:.6f}\n'
+                       f'  平均 Loss_G_L2: {avg_losses["G_L2"]:.6f}\n'
+                       f'{"=" * 80}')
             self._log(log_msg)
 
             # 验证集评估
@@ -287,7 +291,7 @@ class ContextEncoderTrainer(object):
                 # 可以选择每个epoch都测试，或者只在特定epoch测试
                 # 这里设置为每个epoch都测试，你也可以改为 epoch % 5 == 0 等
                 self._test(epoch)
-            
+
             # 将当前epoch的日志添加到总日志中
             if hasattr(self, 'current_epoch_log') and self.json_log_file:
                 self.training_log['epochs'].append(self.current_epoch_log.copy())
@@ -311,12 +315,12 @@ class ContextEncoderTrainer(object):
         # 将真实中心区域放大到完整图像尺寸，用于保存
         # 使用双线性插值将中心区域放大2倍
         real_centers_upsampled = F.interpolate(
-            real_centers, 
+            real_centers,
             size=(self.opt.image_size, self.opt.image_size),
-            mode='bilinear', 
+            mode='bilinear',
             align_corners=False
         )
-        
+
         # 保存真实图像（放大后的中心区域，完整尺寸）
         vutils.save_image(real_centers_upsampled,
                           f'result/train/real/real_samples_epoch_{epoch:03d}.png',
@@ -341,6 +345,7 @@ class ContextEncoderTrainer(object):
         self.netD.eval()
 
         val_losses = {'D': [], 'G_D': [], 'G_L2': []}
+        all_metrics = []  # 存储所有批次的指标
 
         with torch.no_grad():
             for corrupted_images, real_centers in self.val_loader:
@@ -370,12 +375,32 @@ class ContextEncoderTrainer(object):
                 val_losses['D'].append(errD.item())
                 val_losses['G_D'].append(errG_D.item())
                 val_losses['G_L2'].append(errG_l2.item())
+                
+                # 计算图像质量指标（需要将归一化图像转换到[0,1]范围）
+                fake_centers_denorm = denormalize_tensor(fake_centers)
+                real_centers_denorm = denormalize_tensor(real_centers)
+                batch_metrics = calculate_batch_metrics(fake_centers_denorm, real_centers_denorm)
+                all_metrics.append(batch_metrics)
 
         avg_val_losses = {k: sum(v) / len(v) for k, v in val_losses.items()}
+        
+        # 计算平均指标
+        avg_metrics = {}
+        if all_metrics:
+            for key in all_metrics[0].keys():
+                values = [m[key] for m in all_metrics]
+                avg_metrics[key] = sum(values) / len(values)
+        
         log_msg = (f'验证集:\n'
-                  f'  平均 Val Loss_D: {avg_val_losses["D"]:.6f}\n'
-                  f'  平均 Val Loss_G_D: {avg_val_losses["G_D"]:.6f}\n'
-                  f'  平均 Val Loss_G_L2: {avg_val_losses["G_L2"]:.6f}\n'
+                  f'  损失指标:\n'
+                  f'    平均 Val Loss_D: {avg_val_losses["D"]:.6f}\n'
+                  f'    平均 Val Loss_G_D: {avg_val_losses["G_D"]:.6f}\n'
+                  f'    平均 Val Loss_G_L2: {avg_val_losses["G_L2"]:.6f}\n'
+                  f'  图像质量指标:\n'
+                  f'    PSNR: {avg_metrics.get("psnr", 0):.2f} ± {avg_metrics.get("psnr_std", 0):.2f} dB\n'
+                  f'    SSIM: {avg_metrics.get("ssim", 0):.4f} ± {avg_metrics.get("ssim_std", 0):.4f}\n'
+                  f'    MSE: {avg_metrics.get("mse", 0):.6f}\n'
+                  f'    MAE: {avg_metrics.get("mae", 0):.6f}\n'
                   f'{"=" * 80}\n')
         self._log(log_msg)
         
@@ -384,7 +409,11 @@ class ContextEncoderTrainer(object):
             self.current_epoch_log["val"] = {
                 "Loss_D": avg_val_losses["D"],
                 "Loss_G_D": avg_val_losses["G_D"],
-                "Loss_G_L2": avg_val_losses["G_L2"]
+                "Loss_G_L2": avg_val_losses["G_L2"],
+                "PSNR": avg_metrics.get("psnr", 0),
+                "SSIM": avg_metrics.get("ssim", 0),
+                "MSE": avg_metrics.get("mse", 0),
+                "MAE": avg_metrics.get("mae", 0)
             }
 
         self.netG.train()
@@ -396,6 +425,7 @@ class ContextEncoderTrainer(object):
         self.netD.eval()
 
         test_losses = {'D': [], 'G_D': [], 'G_L2': []}
+        all_metrics = []  # 存储所有批次的指标
         
         # 收集所有测试图片用于生成大图
         all_corrupted = []
@@ -432,6 +462,12 @@ class ContextEncoderTrainer(object):
                 test_losses['G_D'].append(errG_D.item())
                 test_losses['G_L2'].append(errG_l2.item())
                 
+                # 计算图像质量指标（需要将归一化图像转换到[0,1]范围）
+                fake_centers_denorm = denormalize_tensor(fake_centers)
+                real_centers_denorm = denormalize_tensor(real_centers)
+                batch_metrics = calculate_batch_metrics(fake_centers_denorm, real_centers_denorm)
+                all_metrics.append(batch_metrics)
+                
                 # 收集图片用于生成大图
                 all_corrupted.append(corrupted_images.cpu())
                 all_real_centers.append(real_centers.cpu())
@@ -457,10 +493,24 @@ class ContextEncoderTrainer(object):
                                 all_recon_images, epoch)
 
         avg_test_losses = {k: sum(v) / len(v) for k, v in test_losses.items()}
+        
+        # 计算平均指标
+        avg_metrics = {}
+        if all_metrics:
+            for key in all_metrics[0].keys():
+                values = [m[key] for m in all_metrics]
+                avg_metrics[key] = sum(values) / len(values)
+        
         log_msg = (f'测试集:\n'
-                  f'  平均 Test Loss_D: {avg_test_losses["D"]:.6f}\n'
-                  f'  平均 Test Loss_G_D: {avg_test_losses["G_D"]:.6f}\n'
-                  f'  平均 Test Loss_G_L2: {avg_test_losses["G_L2"]:.6f}\n'
+                  f'  损失指标:\n'
+                  f'    平均 Test Loss_D: {avg_test_losses["D"]:.6f}\n'
+                  f'    平均 Test Loss_G_D: {avg_test_losses["G_D"]:.6f}\n'
+                  f'    平均 Test Loss_G_L2: {avg_test_losses["G_L2"]:.6f}\n'
+                  f'  图像质量指标:\n'
+                  f'    PSNR: {avg_metrics.get("psnr", 0):.2f} ± {avg_metrics.get("psnr_std", 0):.2f} dB\n'
+                  f'    SSIM: {avg_metrics.get("ssim", 0):.4f} ± {avg_metrics.get("ssim_std", 0):.4f}\n'
+                  f'    MSE: {avg_metrics.get("mse", 0):.6f}\n'
+                  f'    MAE: {avg_metrics.get("mae", 0):.6f}\n'
                   f'{"=" * 80}\n')
         self._log(log_msg)
         
@@ -469,22 +519,26 @@ class ContextEncoderTrainer(object):
             self.current_epoch_log["test"] = {
                 "Loss_D": avg_test_losses["D"],
                 "Loss_G_D": avg_test_losses["G_D"],
-                "Loss_G_L2": avg_test_losses["G_L2"]
+                "Loss_G_L2": avg_test_losses["G_L2"],
+                "PSNR": avg_metrics.get("psnr", 0),
+                "SSIM": avg_metrics.get("ssim", 0),
+                "MSE": avg_metrics.get("mse", 0),
+                "MAE": avg_metrics.get("mae", 0)
             }
 
         self.netG.train()
         self.netD.train()
-    
-    def _save_test_montage(self, corrupted_images, real_centers, fake_centers, 
-                          recon_images, epoch):
+
+    def _save_test_montage(self, corrupted_images, real_centers, fake_centers,
+                           recon_images, epoch):
         """保存测试集所有图片排列成的大图"""
         num_images = corrupted_images.size(0)
-        
+
         # 计算网格大小（尽量接近正方形）
         nrow = int(num_images ** 0.5) + 1
         if nrow * (nrow - 1) >= num_images:
             nrow = nrow - 1
-        
+
         # 保存损坏图像大图
         vutils.save_image(
             corrupted_images,
@@ -492,21 +546,21 @@ class ContextEncoderTrainer(object):
             normalize=True,
             nrow=nrow
         )
-        
+
         # 将中心区域放大到完整图像尺寸
         real_centers_upsampled = F.interpolate(
-            real_centers, 
+            real_centers,
             size=(self.opt.image_size, self.opt.image_size),
-            mode='bilinear', 
+            mode='bilinear',
             align_corners=False
         )
         fake_centers_upsampled = F.interpolate(
-            fake_centers, 
+            fake_centers,
             size=(self.opt.image_size, self.opt.image_size),
-            mode='bilinear', 
+            mode='bilinear',
             align_corners=False
         )
-        
+
         # 保存真实中心区域大图（放大后，完整尺寸）
         vutils.save_image(
             real_centers_upsampled,
@@ -514,7 +568,7 @@ class ContextEncoderTrainer(object):
             normalize=True,
             nrow=nrow
         )
-        
+
         # 保存生成的中心区域大图（放大后，完整尺寸）
         vutils.save_image(
             fake_centers_upsampled,
@@ -522,7 +576,7 @@ class ContextEncoderTrainer(object):
             normalize=True,
             nrow=nrow
         )
-        
+
         # 保存重建图像大图（最重要的结果）
         vutils.save_image(
             recon_images,
@@ -530,36 +584,36 @@ class ContextEncoderTrainer(object):
             normalize=True,
             nrow=nrow
         )
-        
+
         # 保存对比图：每行显示 [损坏图像 | 真实中心(放大) | 生成中心(放大) | 重建图像]
         # 只保存前16个样本的对比图（如果样本数少于16，则全部保存）
         num_compare = min(16, num_images)
         compare_images = []
-        
+
         # 将中心区域放大到完整图像尺寸
         real_centers_upsampled = F.interpolate(
-            real_centers, 
+            real_centers,
             size=(self.opt.image_size, self.opt.image_size),
-            mode='bilinear', 
+            mode='bilinear',
             align_corners=False
         )
         fake_centers_upsampled = F.interpolate(
-            fake_centers, 
+            fake_centers,
             size=(self.opt.image_size, self.opt.image_size),
-            mode='bilinear', 
+            mode='bilinear',
             align_corners=False
         )
-        
+
         for i in range(num_compare):
             # 创建一行对比图：损坏图像 | 真实中心(放大) | 生成中心(放大) | 重建图像
             row = torch.cat([
-                corrupted_images[i:i+1],
-                real_centers_upsampled[i:i+1],
-                fake_centers_upsampled[i:i+1],
-                recon_images[i:i+1]
+                corrupted_images[i:i + 1],
+                real_centers_upsampled[i:i + 1],
+                fake_centers_upsampled[i:i + 1],
+                recon_images[i:i + 1]
             ], dim=3)  # 在宽度维度拼接
             compare_images.append(row)
-        
+
         if compare_images:
             compare_grid = torch.cat(compare_images, dim=0)
             vutils.save_image(
@@ -568,7 +622,7 @@ class ContextEncoderTrainer(object):
                 normalize=True,
                 nrow=1  # 每行一个样本的对比
             )
-        
+
         self._log(f'✓ 测试集图片已保存到 result/test/ (共 {num_images} 个样本)', to_console=False)
 
     def _save_checkpoints(self, epoch):
@@ -594,7 +648,7 @@ class ContextEncoderTrainer(object):
             'epoch': epoch + 1,
             'state_dict': self.netD.state_dict()
         }, 'model/netD_context_encoder_final.pth')
-        
+
         # 训练结束，保存最终日志
         if epoch == self.epochs - 1:
             self.training_log["end_time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -604,15 +658,14 @@ class ContextEncoderTrainer(object):
                         json.dump(self.training_log, f, indent=2, ensure_ascii=False)
                 except Exception as e:
                     print(f"⚠ 警告: 保存JSON日志失败: {e}")
-            
+
             final_log = (f'\n{"=" * 80}\n'
-                        f'训练完成！\n'
-                        f'开始时间: {self.training_log["start_time"]}\n'
-                        f'结束时间: {self.training_log["end_time"]}\n')
+                         f'训练完成！\n'
+                         f'开始时间: {self.training_log["start_time"]}\n'
+                         f'结束时间: {self.training_log["end_time"]}\n')
             if self.log_file:
                 final_log += f'日志文件: {self.log_file}\n'
             if self.json_log_file:
                 final_log += f'JSON日志: {self.json_log_file}\n'
             final_log += f'{"=" * 80}\n'
             self._log(final_log)
-
